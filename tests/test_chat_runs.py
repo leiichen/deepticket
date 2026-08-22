@@ -6,6 +6,7 @@ from collections.abc import AsyncIterator
 import pytest
 
 from deepticket.chat_runs import ChatRunManager
+from deepticket.investigation import InvestigationRunStore
 from deepticket.layers.input.models import ChatInput
 from deepticket.layers.output.models import StreamChunk
 from deepticket.layers.storage.chat_history import ChatHistoryStore
@@ -20,6 +21,7 @@ class _FakeService:
     def __init__(self, tmp_path) -> None:
         storage = LocalStorage(str(tmp_path / "data"))
         self.chat_history = ChatHistoryStore(storage)
+        self.investigation_runs = InvestigationRunStore(storage)
         self._chunks: list[StreamChunk] = []
 
     async def _run_stream(self, agent_input) -> AsyncIterator[StreamChunk]:
@@ -64,9 +66,17 @@ async def test_chat_run_persists_after_subscriber_disconnect(tmp_path) -> None:
     for _ in range(50):
         doc = service.chat_history.get_thread("default", "u1", chat_id)
         assert doc is not None
-        if doc.get("agent_run_status") == "idle":
+        if doc is not None and doc.get("agent_run_status") == "idle":
             messages = doc.get("messages") or []
-            assert any(m.get("role") == "assistant" and m.get("content") == "Hello world" for m in messages)
+            assert any(
+                m.get("role") == "assistant" and m.get("content") == "Hello world"
+                for m in messages
+            )
+            assistant = next(m for m in messages if m.get("role") == "assistant")
+            assert assistant.get("run_id")
+            inv = service.investigation_runs.get_run("default", assistant["run_id"])
+            assert inv is not None
+            assert inv.status.value == "completed"
             return
         await asyncio.sleep(0.05)
 

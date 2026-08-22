@@ -3,22 +3,23 @@ from __future__ import annotations
 
 import logging
 
-from deepticket.auth.user_store import AuthUser, UserStore
 from deepticket import __version__
-from deepticket.chat_runs import ChatRunManager
-from deepticket.config.mcp_loader import filter_enabled_servers, validate_mcp_servers
-from deepticket.config.routing_schema import RoutingConfig
+from deepticket.auth.user_store import AuthUser, UserStore
 from deepticket.chat_orchestrator import ChatOrchestrator
+from deepticket.chat_runs import ChatRunManager
 from deepticket.config.llm_loader import LlmConfig
+from deepticket.config.mcp_loader import filter_enabled_servers, validate_mcp_servers
+from deepticket.config.redis_url import redact_redis_url, resolve_redis_url
+from deepticket.config.routing_schema import RoutingConfig
 from deepticket.config.schema import AppConfig
 from deepticket.ingress_runner import IngressRunner
+from deepticket.investigation import InvestigationRunStore
 from deepticket.layers.engine.openhands_engine import OpenHandsEngine
 from deepticket.layers.ingress.pipeline import IngressJobResult
 from deepticket.layers.input.ingress_models import IngressEvent
 from deepticket.layers.input.models import ChatInput, TicketInput
 from deepticket.layers.knowledge.manager import GitSyncResult, KnowledgeManager
 from deepticket.layers.knowledge.skill_manager import SkillInfo, SkillManager
-from deepticket.config.redis_url import redact_redis_url, resolve_redis_url
 from deepticket.layers.storage import create_storage
 from deepticket.layers.storage.base import StorageBackend
 from deepticket.layers.storage.chat_history import ChatHistoryStore
@@ -48,6 +49,7 @@ class DeepTicketService:
         self.storage: StorageBackend = create_storage(config.storage)
         self.users = UserStore(self.storage)
         self.chat_history = ChatHistoryStore(self.storage)
+        self.investigation_runs = InvestigationRunStore(self.storage)
         self.token_usage = TokenUsageStore(self.storage)
         self.projects = ProjectRegistry(self.storage, config, resolve_path=self._resolve_path)
         self.knowledge = KnowledgeManager(config.knowledge)
@@ -128,6 +130,10 @@ class DeepTicketService:
             )
         else:
             self.projects.config_store.ensure_default_project()
+
+        orphaned = self.investigation_runs.fail_orphaned_runs(reason="service restarted")
+        if orphaned:
+            logger.warning("已将 %s 个非终态 InvestigationRun 标记为 failed", orphaned)
 
         await self.engine.ensure_ready()
         try:

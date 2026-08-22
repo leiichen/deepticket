@@ -7,6 +7,8 @@ from dataclasses import dataclass, field
 
 import httpx
 
+from deepticket.investigation.models import RunSource, RunStatus
+from deepticket.investigation.transitions import RunTransitionError
 from deepticket.layers.input.models import AgentInput, ChatInput
 from deepticket.layers.output.confidence import compute_confidence
 from deepticket.layers.output.models import StreamChunk
@@ -22,6 +24,7 @@ class _ChatRun:
     project_id: str
     uid: str
     chat_id: str
+    run_id: str | None = None
     agent_conversation_id: str | None = None
     subscribers: list[asyncio.Queue] = field(default_factory=list)
     task: asyncio.Task | None = None
@@ -54,6 +57,11 @@ class ChatRunManager:
         async with self._lock:
             existing = self._runs.get(key)
             if existing is not None and not existing.done:
+                raise RuntimeError("该对话已有进行中的 Agent 任务，请稍候")
+            active = self._service.investigation_runs.get_active_run_for_chat(
+                project.project_id, uid, chat_id
+            )
+            if active is not None:
                 raise RuntimeError("该对话已有进行中的 Agent 任务，请稍候")
 
             run = _ChatRun(
@@ -129,8 +137,20 @@ class ChatRunManager:
         activity_log: list[dict[str, str]] = []
         agent_conversation_id = agent_input.conversation_id
         confidence: dict | None = None
+        investigation_run = service.investigation_runs.create_run(
+            project_id=project_id,
+            uid=uid,
+            source=RunSource.CHAT,
+            chat_id=chat_id,
+        )
+        run.run_id = investigation_run.run_id
 
         try:
+            service.investigation_runs.transition(
+                project_id,
+                investigation_run.run_id,
+                RunStatus.RUNNING,
+            )
             service.chat_history.set_agent_run_status(
                 project_id, uid, chat_id, status="running"
             )
@@ -140,6 +160,10 @@ class ChatRunManager:
                 if chunk.conversation_id:
                     agent_conversation_id = chunk.conversation_id
                     run.agent_conversation_id = agent_conversation_id
+                    if run.run_id:
+                        service.investigation_runs.set_oh_conversation_id(
+                            project_id, run.run_id, agent_conversation_id
+                        )
                 if chunk.activity:
                     activity_log.append(
                         {
@@ -152,6 +176,12 @@ class ChatRunManager:
                 await self._broadcast(run, chunk)
 
             if run.cancel_requested:
+                if run.run_id:
+                    service.investigation_runs.transition(
+                        project_id,
+                        run.run_id,
+                        RunStatus.CANCELLED,
+                    )
                 service.chat_history.set_agent_run_status(
                     project_id, uid, chat_id, status="idle"
                 )
@@ -177,6 +207,7 @@ class ChatRunManager:
                     agent_conversation_id=agent_conversation_id,
                     activities=activity_log or None,
                     confidence=confidence if confidence else None,
+                    run_id=run.run_id,
                 )
             elif agent_conversation_id:
                 service.chat_history.set_agent_conversation_id(
@@ -196,16 +227,44 @@ class ChatRunManager:
                 except RuntimeError as exc:
                     logger.warning("记录 token 用量失败: %s", exc)
 
+            if run.run_id:
+                service.investigation_runs.transition(
+                    project_id,
+                    run.run_id,
+                    RunStatus.COMPLETED,
+                )
             service.chat_history.set_agent_run_status(
                 project_id, uid, chat_id, status="idle"
             )
         except asyncio.CancelledError:
+            if run.run_id:
+                try:
+                    service.investigation_runs.transition(
+                        project_id,
+                        run.run_id,
+                        RunStatus.CANCELLED,
+                    )
+                except RunTransitionError as exc:
+                    logger.warning("InvestigationRun cancel transition skipped: %s", exc)
             service.chat_history.set_agent_run_status(
                 project_id, uid, chat_id, status="idle"
             )
             raise
         except Exception as exc:
             logger.exception("Chat run failed: %s", exc)
+            if run.run_id:
+                try:
+                    service.investigation_runs.transition(
+                        project_id,
+                        run.run_id,
+                        RunStatus.FAILED,
+                        error_message=str(exc),
+                    )
+                except RunTransitionError as transition_exc:
+                    logger.warning(
+                        "InvestigationRun failed transition skipped: %s",
+                        transition_exc,
+                    )
             service.chat_history.set_agent_run_status(
                 project_id,
                 uid,
