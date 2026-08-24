@@ -55,6 +55,7 @@ docs/demo-ad-agent.md
 tests/test_ad_roi_demo.py
 
 # 本地推广 / 生图草稿（勿提交）
+resume/
 docs/promotion/
 docs/assets/comfyui/
 docs/assets/mascot/

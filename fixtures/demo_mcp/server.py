@@ -6,7 +6,9 @@ Run from repo root::
 
 Optional env:
 
-- ``DEMO_EXTRA_TOOL=1`` — register ``demo.unknown_action`` for unknown-tool policy tests.
+- ``DEMO_EXTRA_TOOL=1`` — register ``demo_unknown_action`` for unknown-tool policy tests.
+
+Tool names use underscores (``demo_lookup``) because OpenAI/LiteLLM requires ``^[a-zA-Z0-9_-]+$``.
 """
 
 from __future__ import annotations
@@ -41,7 +43,7 @@ _CONFIG_SNAPSHOT: dict[str, Any] = {
 mcp = FastMCP("deepticket-demo")
 
 
-@mcp.tool(name="demo.lookup")
+@mcp.tool(name="demo_lookup")
 def demo_lookup(key: str) -> str:
     """Look up a fixed demo record by key (e.g. order-123). Deterministic per key."""
     record = _LOOKUP_DATA.get(key.strip())
@@ -56,7 +58,7 @@ def demo_lookup(key: str) -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-@mcp.tool(name="demo.read_config")
+@mcp.tool(name="demo_read_config")
 def demo_read_config(section: str = "all") -> str:
     """Return a fixed in-memory config snapshot; section filters top-level keys when not 'all'."""
     section = section.strip().lower()
@@ -73,7 +75,7 @@ def demo_read_config(section: str = "all") -> str:
     return json.dumps(payload, ensure_ascii=False)
 
 
-@mcp.tool(name="demo.echo")
+@mcp.tool(name="demo_echo")
 def demo_echo(message: str, tag: str = "") -> str:
     """Echo inputs back as JSON — useful for distinguishing multiple tool calls in a timeline."""
     return json.dumps(
@@ -82,7 +84,7 @@ def demo_echo(message: str, tag: str = "") -> str:
     )
 
 
-@mcp.tool(name="demo.delete_resource")
+@mcp.tool(name="demo_delete_resource")
 def demo_delete_resource(resource_id: str, resource_type: str = "generic") -> str:
     """Simulate a destructive action; never deletes anything (dry_run only)."""
     return json.dumps(
@@ -97,7 +99,7 @@ def demo_delete_resource(resource_id: str, resource_type: str = "generic") -> st
     )
 
 
-@mcp.tool(name="demo.exec_command")
+@mcp.tool(name="demo_exec_command")
 def demo_exec_command(command: str, cwd: str = "/tmp") -> str:
     """Simulate shell execution; does not run the command."""
     return json.dumps(
@@ -113,7 +115,7 @@ def demo_exec_command(command: str, cwd: str = "/tmp") -> str:
 
 if os.environ.get("DEMO_EXTRA_TOOL", "").strip() in {"1", "true", "yes"}:
 
-    @mcp.tool(name="demo.unknown_action")
+    @mcp.tool(name="demo_unknown_action")
     def demo_unknown_action(target: str = "resource") -> str:
         """Optional tool for unknown_tool_mode tests (enable via DEMO_EXTRA_TOOL=1)."""
         return json.dumps({"action": "unknown", "target": target}, ensure_ascii=False)

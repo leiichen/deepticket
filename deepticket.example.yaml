@@ -144,3 +144,13 @@ ingress:
 #     enabled: true
 mcp:
   servers: {}
+
+# Tool 治理（P0）：显式 PolicyDecision，不映射 OH SecurityRisk
+# tool_governance:
+#   global:
+#     default: allow
+#   tools:
+#     demo_delete_resource:
+#       decision: deny
+#     demo_exec_command:
+#       decision: require_approval

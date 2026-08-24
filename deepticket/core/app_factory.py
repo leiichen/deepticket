@@ -21,6 +21,7 @@ from deepticket.api.routers import (
     system,
     uploads,
     usage,
+    runs,
 )
 from deepticket.core.bootstrap import (
     build_service,
@@ -90,6 +91,7 @@ def create_app() -> FastAPI:
     app.include_router(system.router)
     app.include_router(uploads.router)
     app.include_router(usage.router)
+    app.include_router(runs.router)
 
     @app.get("/", include_in_schema=False)
     async def login_page() -> FileResponse:

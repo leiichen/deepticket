@@ -7,7 +7,11 @@ import pytest
 
 from deepticket.chat_runs import ChatRunManager
 from deepticket.investigation import InvestigationRunStore
-from deepticket.layers.input.models import ChatInput
+from deepticket.investigation.events import RunEventStore
+from deepticket.investigation.governance.gate import ToolGovernanceGate
+from deepticket.config.tool_governance import ToolGovernanceConfig
+from deepticket.investigation.policy.engine import PolicyEngine
+from deepticket.layers.input.models import AgentInput, ChatInput
 from deepticket.layers.output.models import StreamChunk
 from deepticket.layers.storage.chat_history import ChatHistoryStore
 from deepticket.layers.storage.local import LocalStorage
@@ -22,6 +26,9 @@ class _FakeService:
         storage = LocalStorage(str(tmp_path / "data"))
         self.chat_history = ChatHistoryStore(storage)
         self.investigation_runs = InvestigationRunStore(storage)
+        self.run_events = RunEventStore(storage, run_store=self.investigation_runs)
+        self.policy_engine = PolicyEngine(ToolGovernanceConfig())
+        self.governance_gate = ToolGovernanceGate(self.policy_engine, self.run_events)
         self._chunks: list[StreamChunk] = []
 
     async def _run_stream(self, agent_input) -> AsyncIterator[StreamChunk]:
@@ -47,7 +54,7 @@ async def test_chat_run_persists_after_subscriber_disconnect(tmp_path) -> None:
     )
 
     payload = ChatInput(message="follow up")
-    agent_input = type("AgentInput", (), {"conversation_id": None})()
+    agent_input = AgentInput(prompt="follow up")
 
     run = await manager.start(
         project=project,
@@ -105,7 +112,7 @@ async def test_chat_run_status_running_while_in_progress(tmp_path) -> None:
         uid="u1",
         chat_id=chat_id,
         payload=ChatInput(message="q"),
-        agent_input=type("AgentInput", (), {"conversation_id": None})(),
+        agent_input=AgentInput(prompt="q"),
     )
 
     doc = None

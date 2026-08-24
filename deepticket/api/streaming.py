@@ -57,11 +57,16 @@ async def iter_sse_chunks(
     heartbeat_seconds: float = _DEFAULT_HEARTBEAT_SECONDS,
 ) -> AsyncIterator[str]:
     sent_meta = False
+    sent_run_meta = False
     idle_interval = heartbeat_seconds if heartbeat_seconds > 0 else _DEFAULT_HEARTBEAT_SECONDS
     async for chunk in _iter_with_idle_heartbeat(chunks, interval=idle_interval):
+        if chunk.run_id and not sent_run_meta:
+            sent_run_meta = True
+            yield OutputAdapter.sse_meta_event(None, run_id=chunk.run_id)
+            yield _SSE_FLUSH
         if chunk.conversation_id and not sent_meta:
             sent_meta = True
-            yield OutputAdapter.sse_meta_event(chunk.conversation_id)
+            yield OutputAdapter.sse_meta_event(chunk.conversation_id, run_id=chunk.run_id)
             yield _SSE_FLUSH
 
         if chunk.activity:

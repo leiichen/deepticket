@@ -218,7 +218,11 @@ class IngressRunner:
                 self._service.projects.config_store.default_project_id()
             )
             reply, conversation_id, confidence = await collect_stream_text(
-                self._service.chat.run_ticket_stream(ticket, project=default_project)
+                self._service.chat.run_ticket_stream(
+                    ticket,
+                    project=default_project,
+                    ingress_job_id=job_id,
+                )
             )
         except Exception as exc:
             status = "failed"

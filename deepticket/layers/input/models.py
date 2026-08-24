@@ -38,3 +38,5 @@ class AgentInput:
     mcp_config: dict[str, Any] | None = None
     agents_md: str = ""
     history_messages: list[dict[str, str]] = field(default_factory=list)
+    run_id: str | None = None
+    project_id: str | None = None

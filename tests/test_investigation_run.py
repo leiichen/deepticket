@@ -103,6 +103,25 @@ def test_fail_orphaned_runs_marks_non_terminal_as_failed(store: InvestigationRun
     assert loaded.error_message == "service restarted"
 
 
+def test_running_to_blocked_transition(store: InvestigationRunStore) -> None:
+    run = store.create_run(
+        project_id="default",
+        uid="u1",
+        source=RunSource.CHAT,
+        chat_id="chat-1",
+    )
+    store.transition("default", run.run_id, RunStatus.RUNNING)
+    store.transition(
+        "default",
+        run.run_id,
+        RunStatus.BLOCKED,
+        error_message="policy denied",
+    )
+    loaded = store.get_run("default", run.run_id)
+    assert loaded is not None
+    assert loaded.status == RunStatus.BLOCKED
+
+
 def test_list_runs_for_chat_order(store: InvestigationRunStore) -> None:
     first = store.create_run(
         project_id="default",

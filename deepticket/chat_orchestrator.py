@@ -6,6 +6,10 @@ import time
 from collections.abc import AsyncIterator
 from typing import TYPE_CHECKING
 
+from deepticket.investigation.exceptions import PolicyApprovalRequiredError
+from deepticket.investigation.models import RunSource, RunStatus
+from deepticket.investigation.run_lifecycle import begin_investigation_run, resolve_system_uid
+from deepticket.investigation.transitions import RunTransitionError
 from deepticket.layers.input.adapter import InputAdapter
 from deepticket.layers.input.image_urls import inline_local_upload_images
 from deepticket.layers.input.models import AgentInput, ChatInput, TicketInput
@@ -136,11 +140,29 @@ class ChatOrchestrator:
             return
 
     async def run_ticket_stream(
-        self, payload: TicketInput, *, project: ProjectContext
+        self,
+        payload: TicketInput,
+        *,
+        project: ProjectContext,
+        uid: str | None = None,
+        ingress_job_id: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
         self._service.require_llm_configured()
         agent_input = InputAdapter.from_ticket(payload)
         self.apply_project_runtime(agent_input, project)
+        run_uid = uid or resolve_system_uid(self._service)
+        source = RunSource.INGRESS if ingress_job_id else RunSource.TICKET
+        # Ticket/Ingress 无 ChatRunManager：在此直接 begin run，同步消费 engine 流
+        investigation_run = begin_investigation_run(
+            self._service.investigation_runs,
+            self._service.run_events,
+            project_id=project.project_id,
+            uid=run_uid,
+            source=source,
+            agent_input=agent_input,
+            ingress_job_id=ingress_job_id,
+            ticket_id=payload.ticket_id,
+        )
         self._service.storage.set_json(
             self.NAMESPACE_TICKET,
             payload.ticket_id,
@@ -149,28 +171,56 @@ class ChatOrchestrator:
                 "title": payload.title,
                 "status": "running",
                 "repo_ids": payload.repo_ids,
+                "run_id": investigation_run.run_id,
             },
         )
         assistant_parts: list[str] = []
         activity_log: list[dict[str, str]] = []
-        async for chunk in self._run_stream(agent_input):
-            if chunk.activity:
-                activity_log.append(
-                    {
-                        "text": chunk.activity,
-                        "kind": chunk.activity_kind or "default",
-                    }
+        terminal_status = RunStatus.COMPLETED
+        terminal_error: str | None = None
+        try:
+            async for chunk in self._run_stream(agent_input):
+                if chunk.activity:
+                    activity_log.append(
+                        {
+                            "text": chunk.activity,
+                            "kind": chunk.activity_kind or "default",
+                        }
+                    )
+                if chunk.delta:
+                    assistant_parts.append(chunk.delta)
+                if chunk.policy_denied:
+                    terminal_error = chunk.policy_message or terminal_error
+                yield chunk
+            yield StreamChunk(
+                confidence=compute_confidence(
+                    activities=activity_log,
+                    reply="".join(assistant_parts),
+                    ok=True,
                 )
-            if chunk.delta:
-                assistant_parts.append(chunk.delta)
-            yield chunk
-        yield StreamChunk(
-            confidence=compute_confidence(
-                activities=activity_log,
-                reply="".join(assistant_parts),
-                ok=True,
             )
-        )
+        except PolicyApprovalRequiredError as exc:
+            terminal_status = RunStatus.WAITING_APPROVAL
+            terminal_error = str(exc)
+            yield StreamChunk(activity=str(exc), activity_kind="error")
+        except Exception as exc:
+            terminal_status = RunStatus.FAILED
+            terminal_error = str(exc)
+            raise
+        finally:
+            try:
+                self._service.investigation_runs.transition(
+                    project.project_id,
+                    investigation_run.run_id,
+                    terminal_status,
+                    error_message=terminal_error,
+                    event_store=self._service.run_events,
+                )
+            except RunTransitionError as transition_exc:
+                logger.warning(
+                    "InvestigationRun terminal transition skipped: %s",
+                    transition_exc,
+                )
 
     async def _run_stream(self, agent_input: AgentInput) -> AsyncIterator[StreamChunk]:
         conversation_id = agent_input.conversation_id

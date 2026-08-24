@@ -2,6 +2,8 @@
 
 Side-effect-free stdio MCP for governance and Run Timeline testing.
 
+Tool names use underscores (`demo_lookup`) because OpenAI/LiteLLM requires `^[a-zA-Z0-9_-]+$`.
+
 ## Run
 
 From repository root:
@@ -14,13 +16,13 @@ From repository root:
 
 | Tool | Behavior |
 |------|----------|
-| `demo.lookup` | Fixed JSON for keys like `order-123` |
-| `demo.read_config` | Fixed config snapshot |
-| `demo.echo` | Echo parameters (varies per call) |
-| `demo.delete_resource` | Always `dry_run: true` |
-| `demo.exec_command` | Returns `would_run`, never executes |
+| `demo_lookup` | Fixed JSON for keys like `order-123` |
+| `demo_read_config` | Fixed config snapshot |
+| `demo_echo` | Echo parameters (varies per call) |
+| `demo_delete_resource` | Always `dry_run: true` |
+| `demo_exec_command` | Returns `would_run`, never executes |
 
-Set `DEMO_EXTRA_TOOL=1` to also expose `demo.unknown_action`.
+Set `DEMO_EXTRA_TOOL=1` to also expose `demo_unknown_action`.
 
 ## Project MCP config (Admin → 项目配置 → MCP)
 
@@ -39,8 +41,8 @@ Use the **repository root** as the Agent Server working directory (default local
 ```yaml
 tool_governance:
   tools:
-    "demo.delete_resource":
+    demo_delete_resource:
       decision: deny
-    "demo.exec_command":
+    demo_exec_command:
       decision: require_approval
 ```

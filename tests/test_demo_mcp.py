@@ -13,11 +13,11 @@ from mcp.client.stdio import stdio_client
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
 BASE_TOOL_NAMES = {
-    "demo.lookup",
-    "demo.read_config",
-    "demo.echo",
-    "demo.delete_resource",
-    "demo.exec_command",
+    "demo_lookup",
+    "demo_read_config",
+    "demo_echo",
+    "demo_delete_resource",
+    "demo_exec_command",
 }
 
 
@@ -48,14 +48,14 @@ async def test_list_tools_includes_demo_fixture_tools():
         result = await session.list_tools()
         names = {tool.name for tool in result.tools}
         assert BASE_TOOL_NAMES <= names
-        assert "demo.unknown_action" not in names
+        assert "demo_unknown_action" not in names
 
 
 @pytest.mark.asyncio
 async def test_lookup_returns_stable_record():
     async with _demo_session() as session:
-        first = await session.call_tool("demo.lookup", {"key": "order-123"})
-        second = await session.call_tool("demo.lookup", {"key": "order-123"})
+        first = await session.call_tool("demo_lookup", {"key": "order-123"})
+        second = await session.call_tool("demo_lookup", {"key": "order-123"})
         assert first.content
         assert second.content
         payload_first = json.loads(first.content[0].text)
@@ -68,8 +68,8 @@ async def test_lookup_returns_stable_record():
 @pytest.mark.asyncio
 async def test_echo_varies_with_arguments():
     async with _demo_session() as session:
-        a = await session.call_tool("demo.echo", {"message": "hello", "tag": "a"})
-        b = await session.call_tool("demo.echo", {"message": "world", "tag": "b"})
+        a = await session.call_tool("demo_echo", {"message": "hello", "tag": "a"})
+        b = await session.call_tool("demo_echo", {"message": "world", "tag": "b"})
         pa = json.loads(a.content[0].text)
         pb = json.loads(b.content[0].text)
         assert pa != pb
@@ -81,7 +81,7 @@ async def test_echo_varies_with_arguments():
 async def test_delete_resource_is_dry_run():
     async with _demo_session() as session:
         result = await session.call_tool(
-            "demo.delete_resource",
+            "demo_delete_resource",
             {"resource_id": "pod/checkout-1", "resource_type": "pod"},
         )
         payload = json.loads(result.content[0].text)
@@ -95,4 +95,4 @@ async def test_extra_tool_env_registers_unknown_action():
     async with _demo_session(extra_tool=True) as session:
         tools = await session.list_tools()
         names = {tool.name for tool in tools.tools}
-        assert "demo.unknown_action" in names
+        assert "demo_unknown_action" in names

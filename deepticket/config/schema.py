@@ -4,8 +4,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from deepticket.config.routing_schema import RouteConfig
 from deepticket.config.agents_defaults import DEFAULT_AGENTS_MD
+from deepticket.config.routing_schema import RouteConfig
+from deepticket.config.tool_governance import ToolGovernanceConfig
 
 
 class LlmSettings(BaseModel):
@@ -270,3 +271,4 @@ class AppConfig(BaseModel):
     extensions: ExtensionsConfig = Field(default_factory=ExtensionsConfig)
     ingress: IngressSettings = Field(default_factory=IngressSettings)
     mcp: McpSettings = Field(default_factory=McpSettings)
+    tool_governance: ToolGovernanceConfig = Field(default_factory=ToolGovernanceConfig)

@@ -16,6 +16,8 @@ from deepticket.api.schemas import (
 )
 from deepticket.auth.dependencies import get_admin_user
 from deepticket.auth.user_store import AuthUser
+from deepticket.config.mcp_loader import filter_enabled_servers
+from deepticket.paths import PROJECT_ROOT
 from deepticket.projects.models import ProjectConfigRecord, ProjectMemberRecord
 
 router = APIRouter(prefix="/api/admin/projects", tags=["Admin Projects"])
@@ -29,6 +31,24 @@ def _refresh_project_skills(service, project_id: str) -> None:
             logger.info("项目 %s Skills 已重载: %s", project_id, ", ".join(published))
     except (KeyError, OSError, ValueError) as exc:
         logger.warning("项目 %s Skill 重载失败: %s", project_id, exc)
+
+
+async def _refresh_project_mcp_registry(
+    service, project_id: str, servers: dict[str, dict]
+) -> None:
+    enabled = filter_enabled_servers(servers)
+    if not enabled:
+        return
+    try:
+        counts = await service.mcp_tool_registry.refresh_project_servers(
+            project_id,
+            enabled,
+            repo_root=PROJECT_ROOT,
+        )
+        if counts:
+            logger.info("项目 %s MCP registry 已刷新: %s", project_id, counts)
+    except (OSError, RuntimeError, ValueError) as exc:
+        logger.warning("项目 %s MCP registry 刷新失败: %s", project_id, exc)
 
 
 def _project_admin_payload(service, project_id: str) -> dict:
@@ -146,6 +166,7 @@ async def admin_patch_project_mcp(
         saved = service.projects.patch_project_mcp(project_id, body.servers)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+    await _refresh_project_mcp_registry(service, project_id, body.servers)
     return {"project": saved.model_dump(mode="json"), "in_redis": True}
 
 

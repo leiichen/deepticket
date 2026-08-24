@@ -27,6 +27,15 @@ class OutputAdapter:
         return None
 
     @staticmethod
-    def sse_meta_event(conversation_id: str) -> str:
-        meta = json.dumps({"conversation_id": conversation_id})
+    def sse_meta_event(
+        conversation_id: str | None = None,
+        *,
+        run_id: str | None = None,
+    ) -> str:
+        payload: dict[str, str] = {}
+        if conversation_id:
+            payload["conversation_id"] = conversation_id
+        if run_id:
+            payload["run_id"] = run_id
+        meta = json.dumps(payload, ensure_ascii=False)
         return f"event: meta\ndata: {meta}\n\n"

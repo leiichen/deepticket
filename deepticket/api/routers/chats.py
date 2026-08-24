@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from deepticket.api.deps import get_service
 from deepticket.api.schemas import CreateChatRequest, OkResponse, RenameChatRequest
 from deepticket.auth.dependencies import get_current_user
 from deepticket.auth.user_store import AuthUser
+from deepticket.investigation.models import RunStatus
 from deepticket.projects.dependencies import get_project_id
 
 router = APIRouter(prefix="/api/chats", tags=["Chats"])
@@ -85,7 +86,41 @@ async def get_chat_status(
     status = service.chat_history.get_status(project_id, user.uid, chat_id)
     if status is None:
         raise HTTPException(status_code=404, detail="聊天不存在")
+    active = service.investigation_runs.get_active_run_for_chat(
+        project_id, user.uid, chat_id
+    )
+    if active is not None:
+        status["investigation_run"] = active.to_dict()
+        if active.status is RunStatus.WAITING_APPROVAL:
+            pending = service.approval_requests.get_pending_for_run(
+                project_id, active.run_id
+            )
+            if pending is not None:
+                status["pending_approval"] = pending.to_dict()
+    recent = service.investigation_runs.list_runs_for_chat(
+        project_id, chat_id, limit=5
+    )
+    status["recent_runs"] = [item.to_dict() for item in recent if item.uid == user.uid]
     return {"status": status}
+
+
+@router.get("/{chat_id}/runs")
+async def list_chat_runs(
+    chat_id: str,
+    request: Request,
+    project_id: str = Depends(get_project_id),
+    user: AuthUser = Depends(get_current_user),
+    limit: int = Query(20, ge=1, le=100),
+) -> dict:
+    service = get_service(request)
+    thread = service.chat_history.get_thread_summary(project_id, user.uid, chat_id)
+    if thread is None:
+        raise HTTPException(status_code=404, detail="聊天不存在")
+    runs = service.investigation_runs.list_runs_for_chat(project_id, chat_id, limit=limit)
+    return {
+        "chat_id": chat_id,
+        "runs": [item.to_dict() for item in runs if item.uid == user.uid],
+    }
 
 
 @router.patch("/{chat_id}")
