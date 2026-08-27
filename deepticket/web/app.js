@@ -4,7 +4,7 @@ import { openDashboard, wireAdminToken } from "./admin-token.js";
 import { openLlmAdmin, wireAdminLlm } from "./admin-llm.js";
 import { openProjectAdmin, wireAdminProjects } from "./admin-projects.js";
 
-const ASSET_VERSION = "13";
+const ASSET_VERSION = "14";
 const MASCOT_ICON = "/static/mascot-icon.png";
 
 const ACTIVITY_ICONS = {
@@ -60,6 +60,8 @@ const sendBtn = $("sendBtn");
 const stopBtn = $("stopBtn");
 const statusEl = $("status");
 const statusPill = $("statusPill");
+const runStatusPill = $("runStatusPill");
+const runStatusText = $("runStatusText");
 const modelLabelEl = $("modelLabel");
 const knowledgeLabelEl = $("knowledgeLabel");
 const storageLabelEl = $("storageLabel");
@@ -130,6 +132,10 @@ const saveProjectAgentsBtn = $("saveProjectAgentsBtn");
 const loadProjectAgentsDefaultBtn = $("loadProjectAgentsDefaultBtn");
 const reloadProjectConfigBtn = $("reloadProjectConfigBtn");
 const composerZone = document.querySelector(".composer-zone");
+const runApprovalBanner = $("runApprovalBanner");
+const runApprovalToolHint = $("runApprovalToolHint");
+const runApprovalApproveBtn = $("runApprovalApproveBtn");
+const runApprovalRejectBtn = $("runApprovalRejectBtn");
 
 /* 状态 */
 let authToken = localStorage.getItem(TOKEN_KEY) || "";
@@ -148,6 +154,31 @@ let currentProjectId = localStorage.getItem(PROJECT_KEY) || "default";
 let adminProjectYamlDefaults = null;
 let recordMode = localStorage.getItem(RECORD_MODE_KEY) === "1";
 let pendingAttachments = [];
+let currentRunId = null;
+let runTimelinePollTimer = null;
+const LAST_CHAT_KEY = "deepticket:last_chat";
+
+const RUN_STATUS_LABELS = {
+  created: "已创建",
+  queued: "排队中",
+  running: "运行中",
+  waiting_approval: "待审批",
+  completed: "已完成",
+  failed: "失败",
+  blocked: "已拦截",
+  cancelled: "已取消",
+};
+
+const RUN_EVENT_LABELS = {
+  run_created: "Run 创建",
+  run_status_changed: "状态变更",
+  agent_message: "Agent 消息",
+  tool_call: "Tool 调用",
+  tool_result: "Tool 结果",
+  policy_decision: "策略决策",
+  error: "错误",
+  run_completed: "Run 结束",
+};
 
 function syncAppState() {
   App.authToken = authToken;
@@ -326,6 +357,382 @@ function setStatus(text, mode = "ready") {
   statusEl.textContent = text;
   statusPill.classList.remove("ready", "busy", "error");
   statusPill.classList.add(mode === "busy" ? "busy" : mode === "error" ? "error" : "ready");
+}
+
+function updateRunStatusPill(run) {
+  if (!runStatusPill || !runStatusText) return;
+  if (!run || !run.status) {
+    runStatusPill.classList.add("hidden");
+    runStatusPill.classList.remove("running", "failed", "completed", "cancelled", "waiting");
+    return;
+  }
+  const label = RUN_STATUS_LABELS[run.status] || run.status;
+  runStatusText.textContent = `Run · ${label}`;
+  runStatusPill.classList.remove("hidden", "running", "failed", "completed", "cancelled", "waiting");
+  if (run.status === "running" || run.status === "queued" || run.status === "created") {
+    runStatusPill.classList.add("running");
+  } else if (run.status === "failed") {
+    runStatusPill.classList.add("failed");
+  } else if (run.status === "blocked") {
+    runStatusPill.classList.add("failed");
+  } else if (run.status === "completed") {
+    runStatusPill.classList.add("completed");
+  } else if (run.status === "cancelled") {
+    runStatusPill.classList.add("cancelled");
+  } else if (run.status === "waiting_approval") {
+    runStatusPill.classList.add("waiting");
+  }
+}
+
+async function fetchRun(runId) {
+  if (!runId) return null;
+  const resp = await apiFetch(projectQuery(`/api/runs/${runId}`));
+  const data = await resp.json();
+  if (!resp.ok) return null;
+  return data;
+}
+
+async function postRunApproval(runId, action, reason = "") {
+  const resp = await apiFetch(projectQuery(`/api/runs/${runId}/${action}`), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ reason }),
+  });
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    throw new Error(data.detail || `${action} 失败`);
+  }
+  return data;
+}
+
+function hideRunApprovalBanner() {
+  if (runApprovalBanner) {
+    runApprovalBanner.classList.add("hidden");
+    delete runApprovalBanner.dataset.runId;
+  }
+}
+
+function showRunApprovalBanner(run, pendingApproval) {
+  if (!runApprovalBanner || !run?.run_id) return;
+  currentRunId = run.run_id;
+  updateRunStatusPill(run);
+  const tool = pendingApproval?.tool_name || "tool";
+  const command = pendingApproval?.arguments?.command;
+  const extra = command ? ` · ${command}` : "";
+  if (runApprovalToolHint) {
+    runApprovalToolHint.textContent = `工具 ${tool}${extra}`;
+  }
+  runApprovalBanner.dataset.runId = run.run_id;
+  runApprovalBanner.classList.remove("hidden");
+  setComposerEnabled(false);
+  setStatus("等待审批", "busy");
+}
+
+function syncRunApprovalFromStatus(status) {
+  const inv = status?.investigation_run;
+  if (inv?.status === "waiting_approval" && status?.pending_approval) {
+    showRunApprovalBanner(inv, status.pending_approval);
+    return true;
+  }
+  if (status?.agent_run_status !== "waiting_approval") {
+    hideRunApprovalBanner();
+  }
+  return false;
+}
+
+async function handleRunApprovalAction(runId, action, { baselineCount = null } = {}) {
+  if (!runId) return;
+  const approveBtn = runApprovalApproveBtn;
+  const rejectBtn = runApprovalRejectBtn;
+  if (approveBtn) approveBtn.disabled = true;
+  if (rejectBtn) rejectBtn.disabled = true;
+  try {
+    await postRunApproval(runId, action);
+    hideRunApprovalBanner();
+    if (action === "approve") {
+      setBusy(true);
+      setStatus("已批准，Agent 继续执行…", "busy");
+      setComposerEnabled(false);
+      if (currentChatId) {
+        const countBaseline =
+          baselineCount ?? document.querySelectorAll("#history .msg").length;
+        const updated = await waitForAssistantReply(currentChatId, countBaseline, {
+          maxAttempts: 90,
+        });
+        if (updated && currentChatId) {
+          renderHistory(updated.messages || []);
+          await refreshChats();
+          if (updated.title) chatTitleEl.textContent = updated.title;
+          toast("Agent 已继续执行", "success");
+        }
+      }
+      setStatus("就绪");
+    } else {
+      setStatus("已拒绝", "error");
+      toast("已拒绝工具调用", "info");
+      const detail = await fetchRun(runId);
+      if (detail?.run) updateRunStatusPill(detail.run);
+      setComposerEnabled(true);
+    }
+  } catch (err) {
+    toast(err.message || "审批操作失败", "error");
+    throw err;
+  } finally {
+    if (approveBtn) approveBtn.disabled = false;
+    if (rejectBtn) rejectBtn.disabled = false;
+    if (action === "approve") {
+      setBusy(false);
+      setComposerEnabled(true);
+    }
+  }
+}
+
+async function pollChatStatusForApproval(chatId) {
+  if (!chatId) return false;
+  try {
+    const statusResp = await apiFetch(projectQuery(`/api/chats/${chatId}/status`));
+    const statusData = await statusResp.json();
+    if (!statusResp.ok) return false;
+    const status = statusData.status || {};
+    if (status.investigation_run) {
+      currentRunId = status.investigation_run.run_id || currentRunId;
+      updateRunStatusPill(status.investigation_run);
+    }
+    return syncRunApprovalFromStatus(status);
+  } catch {
+    return false;
+  }
+}
+
+async function fetchRunEvents(runId, afterSeq = 0) {
+  if (!runId) return [];
+  const resp = await apiFetch(
+    projectQuery(`/api/runs/${runId}/events?after_seq=${afterSeq}&limit=200`),
+  );
+  const data = await resp.json();
+  if (!resp.ok) return [];
+  return data.events || [];
+}
+
+function runEventToActivity(event) {
+  const type = event?.type || "";
+  const payload = event?.payload || {};
+  if (type === "tool_call") {
+    const tool = payload.tool || "tool";
+    const server = payload.mcp_server ? ` @ ${payload.mcp_server}` : "";
+    return { text: `调用 ${tool}${server}`, kind: "terminal" };
+  }
+  if (type === "tool_result") {
+    const summary = payload.summary || payload.text_preview || "工具返回";
+    return { text: summary, kind: payload.status === "error" ? "error" : "default" };
+  }
+  if (type === "policy_decision") {
+    const tool = payload.tool || "tool";
+    const decision = payload.decision || "unknown";
+    return {
+      text: `策略 ${decision}: ${tool}`,
+      kind: decision === "deny" ? "error" : "system",
+    };
+  }
+  if (type === "error") {
+    return { text: payload.message || "运行错误", kind: "error" };
+  }
+  if (type === "agent_message") {
+    return { text: payload.text_preview || "Agent 消息", kind: "think" };
+  }
+  if (type === "run_status_changed") {
+    const from = payload.from || "?";
+    const to = payload.to || "?";
+    return { text: `Run 状态 ${from} → ${to}`, kind: "system" };
+  }
+  return null;
+}
+
+function rememberOpenChat(chatId) {
+  if (!chatId || !currentProjectId) return;
+  sessionStorage.setItem(LAST_CHAT_KEY, `${currentProjectId}:${chatId}`);
+}
+
+function chatNeedsResume(chat, status) {
+  const inv = status?.investigation_run;
+  if (
+    inv
+    && ["running", "queued", "created", "waiting_approval"].includes(inv.status)
+  ) {
+    const messages = chat?.messages || [];
+    const last = messages[messages.length - 1];
+    if (inv.status === "waiting_approval") return true;
+    return last?.role === "user";
+  }
+  const messages = chat?.messages || [];
+  if (!messages.length) return false;
+  const last = messages[messages.length - 1];
+  return last.role === "user" && chat.agent_run_status === "running";
+}
+
+async function restoreLastOpenChat() {
+  const raw = sessionStorage.getItem(LAST_CHAT_KEY);
+  if (!raw) return;
+  const [projectId, chatId] = raw.split(":", 2);
+  if (!projectId || !chatId || projectId !== currentProjectId) return;
+  if (!allChats.some((item) => item.chat_id === chatId)) return;
+  await openChat(chatId);
+}
+
+function renderRunTimeline(listEl, metaEl, events, run) {
+  if (!listEl) return;
+  if (metaEl && run) {
+    metaEl.innerHTML = `
+      <div class="run-timeline-head">
+        <span class="run-timeline-id">#${escapeHtml(String(run.run_id || "").slice(0, 8))}</span>
+        <span class="run-timeline-status">${escapeHtml(RUN_STATUS_LABELS[run.status] || run.status || "—")}</span>
+      </div>`;
+  }
+  if (!events.length) {
+    listEl.innerHTML = `<div class="run-timeline-empty">暂无 Run 事件</div>`;
+    return;
+  }
+  listEl.innerHTML = events
+    .map((event) => {
+      const type = event.type || "event";
+      const label = RUN_EVENT_LABELS[type] || type;
+      const payload = event.payload || {};
+      const detail =
+        payload.text_preview ||
+        payload.summary ||
+        payload.message ||
+        payload.tool ||
+        payload.decision ||
+        (payload.from && payload.to ? `${payload.from} → ${payload.to}` : "");
+      return `<div class="run-timeline-item" data-type="${escapeHtml(type)}">
+        <div class="run-timeline-item-head">
+          <span class="run-timeline-seq">#${Number(event.seq || 0)}</span>
+          <span class="run-timeline-type">${escapeHtml(label)}</span>
+        </div>
+        <div class="run-timeline-detail">${escapeHtml(String(detail || ""))}</div>
+      </div>`;
+    })
+    .join("");
+}
+
+function bindThinkingTabs(root) {
+  const tabs = root.querySelectorAll(".thinking-tab");
+  const panels = root.querySelectorAll(".thinking-panel");
+  tabs.forEach((tab) => {
+    tab.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const name = tab.dataset.tab;
+      tabs.forEach((item) => item.classList.toggle("active", item === tab));
+      panels.forEach((panel) => {
+        panel.classList.toggle("hidden", panel.dataset.panel !== name);
+      });
+    });
+  });
+}
+
+function renderRunApprovalActions(metaEl, run, pendingApproval) {
+  if (!metaEl || !run || run.status !== "waiting_approval") return;
+  const tool = pendingApproval?.tool_name || "tool";
+  metaEl.insertAdjacentHTML(
+    "beforeend",
+    `<div class="run-approval-actions">
+      <span class="run-approval-hint">待审批工具：<code>${escapeHtml(tool)}</code></span>
+      <button type="button" class="btn btn-primary btn-sm" data-run-approve="${escapeHtml(run.run_id)}">批准</button>
+      <button type="button" class="btn btn-secondary btn-sm" data-run-reject="${escapeHtml(run.run_id)}">拒绝</button>
+    </div>`,
+  );
+}
+
+function bindRunApprovalActions(root, metaEl) {
+  root.querySelectorAll("[data-run-approve]").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const runId = btn.getAttribute("data-run-approve");
+      if (!runId) return;
+      btn.disabled = true;
+      try {
+        await handleRunApprovalAction(runId, "approve");
+      } catch {
+        /* toast 已在 handleRunApprovalAction */
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+  root.querySelectorAll("[data-run-reject]").forEach((btn) => {
+    btn.addEventListener("click", async (event) => {
+      event.stopPropagation();
+      const runId = btn.getAttribute("data-run-reject");
+      if (!runId) return;
+      btn.disabled = true;
+      try {
+        await handleRunApprovalAction(runId, "reject");
+      } catch {
+        /* toast 已在 handleRunApprovalAction */
+      } finally {
+        btn.disabled = false;
+      }
+    });
+  });
+}
+
+function bindRunDetailsToggle(root, { detailsPanelEl, detailsBtnEl, onOpen }) {
+  if (!detailsBtnEl || !detailsPanelEl) return;
+  detailsBtnEl.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const open = detailsPanelEl.classList.toggle("hidden");
+    detailsBtnEl.classList.toggle("active", !open);
+    detailsBtnEl.setAttribute("aria-expanded", open ? "false" : "true");
+    if (!open && typeof onOpen === "function") onOpen();
+  });
+}
+
+function attachRunTimelineController(root, { timelineListEl, timelineMetaEl, getRun }) {
+  let afterSeq = 0;
+  let polling = false;
+
+  const refresh = async () => {
+    const runHint = typeof getRun === "function" ? getRun() : null;
+    const runId = runHint?.run_id || currentRunId;
+    if (!runId) return;
+    const detail = await fetchRun(runId);
+    const run = detail?.run || runHint;
+    const events = await fetchRunEvents(runId, afterSeq);
+    if (events.length) {
+      afterSeq = Math.max(afterSeq, ...events.map((item) => Number(item.seq || 0)));
+      const existing = root.__runEvents || [];
+      root.__runEvents = existing.concat(events);
+    }
+    renderRunTimeline(timelineListEl, timelineMetaEl, root.__runEvents || [], run);
+    if (run?.status === "waiting_approval" && detail?.pending_approval && timelineMetaEl) {
+      if (!timelineMetaEl.querySelector(".run-approval-actions")) {
+        renderRunApprovalActions(timelineMetaEl, run, detail.pending_approval);
+        bindRunApprovalActions(root, timelineMetaEl);
+      }
+    }
+    if (run && !["running", "queued", "created", "waiting_approval"].includes(run.status)) {
+      stop();
+    }
+  };
+
+  const start = () => {
+    if (polling) return;
+    polling = true;
+    root.__runEvents = [];
+    afterSeq = 0;
+    refresh();
+    runTimelinePollTimer = window.setInterval(refresh, 2000);
+  };
+
+  const stop = () => {
+    polling = false;
+    if (runTimelinePollTimer) {
+      window.clearInterval(runTimelinePollTimer);
+      runTimelinePollTimer = null;
+    }
+  };
+
+  return { refresh, start, stop };
 }
 
 function setBusy(nextBusy) {
@@ -730,24 +1137,49 @@ function buildThinkingShell({ keepExpanded = false, label = "正在准备", show
       </div>
       <span class="thinking-step-count"></span>
       ${showElapsed ? '<span class="thinking-elapsed">0s</span>' : ""}
+      <button type="button" class="thinking-run-details-btn hidden" aria-expanded="false">运行详情</button>
       <span class="thinking-chevron">${ICONS.chevron}</span>
     </button>
     <div class="thinking-body">
-      <div class="thinking-steps"></div>
-      <div class="thinking-shimmer"></div>
+      <div class="thinking-panel" data-panel="steps">
+        <div class="thinking-steps"></div>
+        <div class="thinking-shimmer"></div>
+      </div>
+      <div class="thinking-panel thinking-run-details hidden" data-panel="details">
+        <div class="run-timeline-meta"></div>
+        <div class="run-timeline-list"></div>
+      </div>
     </div>
   `;
 
   const toggleEl = root.querySelector(".thinking-toggle");
   const bodyEl = root.querySelector(".thinking-body");
   const tabScrollEl = root.querySelector(".thinking-tab-scroll");
-  const stepsEl = root.querySelector(".thinking-steps");
+  const stepsEl = root.querySelector('.thinking-panel[data-panel="steps"] .thinking-steps');
+  const detailsPanelEl = root.querySelector(".thinking-run-details");
+  const detailsBtnEl = root.querySelector(".thinking-run-details-btn");
+  const timelineListEl = root.querySelector(".run-timeline-list");
+  const timelineMetaEl = root.querySelector(".run-timeline-meta");
   const labelEl = root.querySelector(".thinking-label");
   const countEl = root.querySelector(".thinking-step-count");
   const elapsedEl = root.querySelector(".thinking-elapsed");
   const interaction = bindThinkingInteractions(root, { bodyEl, tabScrollEl, toggleEl });
 
-  return { root, toggleEl, bodyEl, tabScrollEl, stepsEl, labelEl, countEl, elapsedEl, interaction };
+  return {
+    root,
+    toggleEl,
+    bodyEl,
+    tabScrollEl,
+    stepsEl,
+    detailsPanelEl,
+    detailsBtnEl,
+    timelineListEl,
+    timelineMetaEl,
+    labelEl,
+    countEl,
+    elapsedEl,
+    interaction,
+  };
 }
 
 function createThinkingBlock(options = {}) {
@@ -761,7 +1193,22 @@ function createThinkingBlock(options = {}) {
     countEl,
     elapsedEl,
     interaction,
+    detailsPanelEl,
+    detailsBtnEl,
+    timelineListEl,
+    timelineMetaEl,
   } = buildThinkingShell({ keepExpanded, label: "正在准备", showElapsed: true });
+
+  const timelineCtl = attachRunTimelineController(root, {
+    timelineListEl,
+    timelineMetaEl,
+    getRun: () => ({ run_id: currentRunId, status: "running" }),
+  });
+  bindRunDetailsToggle(root, {
+    detailsPanelEl,
+    detailsBtnEl,
+    onOpen: () => timelineCtl.refresh(),
+  });
 
   const activities = [];
   let currentActivity = "";
@@ -840,13 +1287,29 @@ function createThinkingBlock(options = {}) {
     },
     stop() {
       window.clearInterval(elapsedTimer);
+      timelineCtl.stop();
+    },
+    setRunId(runId) {
+      currentRunId = runId;
+      if (detailsBtnEl) detailsBtnEl.classList.remove("hidden");
+      timelineCtl.start();
     },
   };
 }
 
-function createStaticThinkingBlock(activities) {
+function createStaticThinkingBlock(activities, runId = null) {
   const safeActivities = Array.isArray(activities) ? activities : [];
-  const { root, bodyEl, tabScrollEl, stepsEl, labelEl, countEl } = buildThinkingShell({
+  const {
+    root,
+    bodyEl,
+    tabScrollEl,
+    stepsEl,
+    countEl,
+    detailsPanelEl,
+    detailsBtnEl,
+    timelineListEl,
+    timelineMetaEl,
+  } = buildThinkingShell({
     keepExpanded: false,
     label: `Agent 步骤（${safeActivities.length}）`,
     showElapsed: false,
@@ -860,6 +1323,39 @@ function createStaticThinkingBlock(activities) {
     countEl.classList.toggle("visible", safeActivities.length > 1);
   }
   requestAnimationFrame(() => scrollThinkingPanel({ bodyEl, tabScrollEl, stickBody: false }));
+  const timelineCtl = attachRunTimelineController(root, {
+    timelineListEl,
+    timelineMetaEl,
+    getRun: () => (runId ? { run_id: runId, status: "completed" } : null),
+  });
+  bindRunDetailsToggle(root, {
+    detailsPanelEl,
+    detailsBtnEl,
+    onOpen: () => {
+      timelineCtl.refresh();
+    },
+  });
+  if (runId && detailsBtnEl) {
+    detailsBtnEl.classList.remove("hidden");
+    timelineCtl.start();
+  }
+  if (runId && !safeActivities.length) {
+    fetchRunEvents(runId, 0)
+      .then((events) => {
+        const fromEvents = events
+          .map((event) => runEventToActivity(event))
+          .filter(Boolean);
+        if (!fromEvents.length) return;
+        syncThinkingSteps(stepsEl, fromEvents, iconFor, { markLastCurrent: false });
+        if (countEl) {
+          countEl.textContent = String(fromEvents.length);
+          countEl.classList.toggle("visible", fromEvents.length > 1);
+        }
+        const labelEl = root.querySelector(".thinking-label");
+        if (labelEl) labelEl.textContent = `Agent 步骤（${fromEvents.length}）`;
+      })
+      .catch(() => {});
+  }
   return root;
 }
 
@@ -871,7 +1367,9 @@ function renderHistory(messages) {
     } else if (item.role === "assistant") {
       const { body, content } = createAssistantShell(false);
       if (Array.isArray(item.activities) && item.activities.length) {
-        body.insertBefore(createStaticThinkingBlock(item.activities), content);
+        body.insertBefore(createStaticThinkingBlock(item.activities, item.run_id || null), content);
+      } else if (item.run_id) {
+        body.insertBefore(createStaticThinkingBlock([], item.run_id), content);
       }
       content.innerHTML = renderMarkdown(item.content);
       bindCodeCopy(content);
@@ -886,6 +1384,8 @@ function renderHistory(messages) {
 function clearChatPanel() {
   currentChatId = null;
   agentConversationId = null;
+  currentRunId = null;
+  updateRunStatusPill(null);
   chatTitleEl.textContent = "选择或新建对话";
   updateConversationMeta();
   messagesInner.querySelectorAll(".msg").forEach((el) => el.remove());
@@ -1054,6 +1554,7 @@ async function openChat(chatId) {
   if (!resp.ok) throw new Error(data.detail || "打开对话失败");
 
   currentChatId = data.chat.chat_id;
+  rememberOpenChat(currentChatId);
   agentConversationId = data.chat.agent_conversation_id || null;
   chatTitleEl.textContent = data.chat.title || "新会话";
   const chatIdx = allChats.findIndex((c) => c.chat_id === chatId);
@@ -1069,9 +1570,25 @@ async function openChat(chatId) {
   setComposerEnabled(true);
   renderChatList();
   setStatus("就绪");
-  closeSidebarMobile();
-  promptEl.focus();
-  resumePendingAssistant(data.chat).catch((err) => toast(err.message, "error"));
+  try {
+    const statusResp = await apiFetch(projectQuery(`/api/chats/${chatId}/status`));
+    const statusData = await statusResp.json();
+    const status = statusResp.ok ? statusData.status || {} : {};
+    if (status.investigation_run) {
+      currentRunId = status.investigation_run.run_id || null;
+      updateRunStatusPill(status.investigation_run);
+    } else {
+      updateRunStatusPill(null);
+    }
+    syncRunApprovalFromStatus(status);
+    closeSidebarMobile();
+    promptEl.focus();
+    resumePendingAssistant(data.chat, status).catch((err) => toast(err.message, "error"));
+  } catch {
+    updateRunStatusPill(null);
+    closeSidebarMobile();
+    promptEl.focus();
+  }
 }
 
 async function createChat() {
@@ -1104,6 +1621,17 @@ async function pollChatForReply(chatId, baselineCount, { maxAttempts = 15 } = {}
     const statusData = await statusResp.json();
     if (!statusResp.ok) continue;
     const status = statusData.status || {};
+    if (status.investigation_run) {
+      currentRunId = status.investigation_run.run_id || currentRunId;
+      updateRunStatusPill(status.investigation_run);
+    }
+    if (
+      status.agent_run_status === "waiting_approval"
+      || status.investigation_run?.status === "waiting_approval"
+    ) {
+      syncRunApprovalFromStatus(status);
+      return { chat: null, message: null, waitingApproval: true };
+    }
     const latest = status.latest_message;
     const messageCount = Number(status.message_count || 0);
     if (status.agent_run_status === "failed") {
@@ -1132,6 +1660,11 @@ async function pollChatForReply(chatId, baselineCount, { maxAttempts = 15 } = {}
   return null;
 }
 
+async function waitForAssistantReply(chatId, baselineCount) {
+  const result = await pollChatForReply(chatId, baselineCount, { maxAttempts: 90 });
+  return result?.chat || null;
+}
+
 function chatNeedsAssistantWait(chat) {
   const messages = chat?.messages || [];
   if (!messages.length) return false;
@@ -1139,32 +1672,82 @@ function chatNeedsAssistantWait(chat) {
   return last.role === "user" && chat.agent_run_status === "running";
 }
 
-async function waitForAssistantReply(chatId, baselineCount) {
-  const result = await pollChatForReply(chatId, baselineCount, { maxAttempts: 90 });
-  return result?.chat || null;
-}
+async function resumePendingAssistant(chat, status = {}) {
+  if (!chatNeedsResume(chat, status)) return;
+  const invRun = status.investigation_run || null;
+  const runId = invRun?.run_id || null;
+  if (runId) {
+    currentRunId = runId;
+    updateRunStatusPill(invRun);
+  }
 
-async function resumePendingAssistant(chat) {
-  if (!chatNeedsAssistantWait(chat)) return;
   const baselineCount = (chat.messages || []).length;
   setBusy(true);
-  setStatus("Agent 仍在分析…", "busy");
+  setStatus(
+    invRun?.status === "waiting_approval" ? "等待审批…" : "Agent 仍在分析…",
+    "busy",
+  );
   const { body, content, thinking } = createAssistantShell(true, { recordMode });
   content.classList.add("placeholder");
-  content.textContent = "Agent 仍在后台分析，等待回复…";
-  thinking.addActivity("已重新连接对话，等待 Agent 完成…", "system");
+  if (invRun?.status === "waiting_approval") {
+    content.textContent = "工具调用待审批，请展开「运行详情」批准或拒绝。";
+  } else {
+    content.textContent = "Agent 仍在后台分析，正在从服务端恢复进度…";
+  }
+  thinking.addActivity("页面已刷新，正在恢复 Run 进度…", "system");
+  if (runId) {
+    thinking.setRunId(runId);
+  }
+
+  let afterSeq = 0;
+  const seenActivityKeys = new Set();
+  const syncRunEvents = async () => {
+    if (!runId) return;
+    const events = await fetchRunEvents(runId, afterSeq);
+    if (!events.length) return;
+    afterSeq = Math.max(afterSeq, ...events.map((item) => Number(item.seq || 0)));
+    for (const event of events) {
+      const activity = runEventToActivity(event);
+      if (!activity) continue;
+      const key = `${event.seq || 0}:${activity.text}:${activity.kind}`;
+      if (seenActivityKeys.has(key)) continue;
+      seenActivityKeys.add(key);
+      thinking.addActivity(activity.text, activity.kind);
+    }
+  };
+
+  await syncRunEvents();
+  const eventPollTimer = window.setInterval(() => {
+    syncRunEvents().catch(() => {});
+  }, 2000);
+
+  if (invRun?.status === "waiting_approval") {
+    syncRunApprovalFromStatus(status);
+    window.clearInterval(eventPollTimer);
+    setBusy(false);
+    return;
+  }
+
   try {
     const updated = await waitForAssistantReply(chat.chat_id, baselineCount);
     if (!updated || currentChatId !== chat.chat_id) return;
     renderHistory(updated.messages || []);
     await refreshChats();
     if (updated.title) chatTitleEl.textContent = updated.title;
+    const statusResp = await apiFetch(projectQuery(`/api/chats/${chat.chat_id}/status`));
+    const statusData = await statusResp.json();
+    if (statusResp.ok && statusData.status?.investigation_run) {
+      updateRunStatusPill(statusData.status.investigation_run);
+    } else {
+      updateRunStatusPill(null);
+    }
     setStatus("就绪");
     toast("回复已就绪", "success");
   } catch (err) {
     toast(err.message || "等待回复失败", "error");
     setStatus("就绪");
   } finally {
+    window.clearInterval(eventPollTimer);
     setBusy(false);
   }
 }
@@ -1219,6 +1802,7 @@ async function sendMessage(text) {
 
   chatAbortController = new AbortController();
   const { signal } = chatAbortController;
+  let approvalPollTimer = null;
 
   let assistantText = "";
   let contentStarted = false;
@@ -1274,6 +1858,22 @@ async function sendMessage(text) {
     }
 
     setStatus("生成回复中…", "busy");
+
+    const activeChatIdForApproval = currentChatId;
+    const approvalPollTimer = window.setInterval(() => {
+      pollChatStatusForApproval(activeChatIdForApproval)
+        .then((waiting) => {
+          if (!waiting || currentChatId !== activeChatIdForApproval) return;
+          window.clearInterval(approvalPollTimer);
+          thinking.stop();
+          if (!contentStarted) {
+            content.classList.remove("placeholder");
+            content.textContent = "工具调用待审批，请在下方输入框上方批准或拒绝。";
+          }
+          chatAbortController?.abort();
+        })
+        .catch(() => {});
+    }, 2000);
 
     const reader = resp.body.getReader();
     const decoder = new TextDecoder();
@@ -1344,11 +1944,16 @@ async function sendMessage(text) {
           const line = part.split("\n").find((l) => l.startsWith("data: "));
           if (line) {
             try {
-            const meta = JSON.parse(line.slice(6));
-            if (meta.conversation_id) {
+              const meta = JSON.parse(line.slice(6));
+              if (meta.conversation_id) {
                 agentConversationId = meta.conversation_id;
                 updateConversationMeta();
-            }
+              }
+              if (meta.run_id) {
+                currentRunId = meta.run_id;
+                thinking.setRunId(meta.run_id);
+                updateRunStatusPill({ run_id: meta.run_id, status: "running" });
+              }
             } catch { /* 忽略 */ }
           }
           continue;
@@ -1440,6 +2045,9 @@ async function sendMessage(text) {
     }
     fail(err.message);
   } finally {
+    if (approvalPollTimer !== null) {
+      window.clearInterval(approvalPollTimer);
+    }
     userStoppedRun = false;
     chatAbortController = null;
     setBusy(false);
@@ -1647,6 +2255,34 @@ ticketTemplateBtn.addEventListener("click", () => {
 });
 
 /* --------------------------------------------------------------------------
+ * 工具审批（输入框上方横幅）
+ * ------------------------------------------------------------------------ */
+
+if (runApprovalApproveBtn) {
+  runApprovalApproveBtn.addEventListener("click", async () => {
+    const runId = runApprovalBanner?.dataset.runId || currentRunId;
+    if (!runId) return;
+    try {
+      await handleRunApprovalAction(runId, "approve");
+    } catch {
+      /* toast 已在 handleRunApprovalAction */
+    }
+  });
+}
+
+if (runApprovalRejectBtn) {
+  runApprovalRejectBtn.addEventListener("click", async () => {
+    const runId = runApprovalBanner?.dataset.runId || currentRunId;
+    if (!runId) return;
+    try {
+      await handleRunApprovalAction(runId, "reject");
+    } catch {
+      /* toast 已在 handleRunApprovalAction */
+    }
+  });
+}
+
+/* --------------------------------------------------------------------------
  * 输入框
  * ------------------------------------------------------------------------ */
 
@@ -1746,7 +2382,10 @@ document.querySelectorAll(".hint-card").forEach((btn) => {
     await loadProjects();
     await loadHealth();
     await refreshChats();
-    clearChatPanel();
+    await restoreLastOpenChat();
+    if (!currentChatId) {
+      clearChatPanel();
+    }
     if (isAdmin && !llmConfigured) {
       toast("请先配置 LLM API Key", "error");
       openLlmAdmin();

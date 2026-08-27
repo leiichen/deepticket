@@ -41,6 +41,12 @@ class RedisStorage(StorageBackend):
         else:
             self.client.set(redis_key, payload)
 
+    def incr(self, namespace: str, key: str, *, amount: int = 1) -> int:
+        redis_key = self._redis_key(namespace, key)
+        value = int(self.client.incr(redis_key, amount))
+        self._touch_ttl(redis_key)
+        return value
+
     def delete(self, namespace: str, key: str) -> None:
         self.client.delete(self._redis_key(namespace, key))
 

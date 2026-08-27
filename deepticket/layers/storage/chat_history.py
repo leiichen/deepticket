@@ -160,6 +160,7 @@ class ChatHistoryStore:
         activities: list[dict[str, str]] | None = None,
         confidence: dict[str, Any] | None = None,
         image_urls: list[str] | None = None,
+        run_id: str | None = None,
     ) -> dict[str, Any]:
         meta = self._load_chat_meta(project_id, uid, chat_id)
         if meta is None:
@@ -181,6 +182,8 @@ class ChatHistoryStore:
             message["confidence"] = confidence
         if image_urls:
             message["image_urls"] = list(image_urls)
+        if run_id:
+            message["run_id"] = run_id
 
         msg_key = self._msg_key(project_id, uid, chat_id, msg_id)
         self.storage.hset(_NS_MSG, msg_key, _message_to_hash(message, project_id, uid, chat_id))
@@ -478,6 +481,8 @@ def _message_to_hash(
         mapping["confidence"] = json.dumps(
             message["confidence"], ensure_ascii=False
         )
+    if message.get("run_id"):
+        mapping["run_id"] = str(message["run_id"])
     return mapping
 
 
@@ -504,4 +509,6 @@ def _hash_to_message(row: dict[str, str], *, fallback_id: str) -> dict[str, Any]
             message["confidence"] = json.loads(row["confidence"])
         except json.JSONDecodeError:
             pass
+    if row.get("run_id"):
+        message["run_id"] = row["run_id"]
     return message

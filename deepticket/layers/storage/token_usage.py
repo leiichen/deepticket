@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import uuid
-from typing import Any, Callable
+from collections.abc import Callable
+from typing import Any
 
 from deepticket.layers.storage.base import StorageBackend
 from deepticket.layers.storage.json_index import index_json_key, list_indexed_json_keys

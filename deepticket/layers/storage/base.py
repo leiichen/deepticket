@@ -15,6 +15,10 @@ class StorageBackend(ABC):
     def set_json(self, namespace: str, key: str, value: dict[str, Any]) -> None:
         raise NotImplementedError
 
+    def incr(self, namespace: str, key: str, *, amount: int = 1) -> int:
+        """原子递增（Redis INCR）；RunEvent seq 依赖此保证并发下单调。"""
+        raise NotImplementedError(f"{type(self).__name__} 不支持 incr")
+
     @abstractmethod
     def delete(self, namespace: str, key: str) -> None:
         raise NotImplementedError

@@ -2,23 +2,32 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 
-from deepticket.auth.user_store import AuthUser, UserStore
 from deepticket import __version__
-from deepticket.chat_runs import ChatRunManager
-from deepticket.config.mcp_loader import filter_enabled_servers, validate_mcp_servers
-from deepticket.config.routing_schema import RoutingConfig
+from deepticket.auth.user_store import AuthUser, UserStore
 from deepticket.chat_orchestrator import ChatOrchestrator
+from deepticket.chat_runs import ChatRunManager
 from deepticket.config.llm_loader import LlmConfig
+from deepticket.config.mcp_loader import filter_enabled_servers, validate_mcp_servers
+from deepticket.config.redis_url import redact_redis_url, resolve_redis_url
+from deepticket.config.routing_schema import RoutingConfig
 from deepticket.config.schema import AppConfig
 from deepticket.ingress_runner import IngressRunner
+from deepticket.investigation import InvestigationRunStore
+from deepticket.investigation.approvals import ApprovalRequestStore
+from deepticket.investigation.events import RunEventStore
+from deepticket.investigation.governance.gate import ToolGovernanceGate
+from deepticket.investigation.governance.hook import build_hook_config
+from deepticket.investigation.governance.session_context import GovernanceContextStore
+from deepticket.investigation.policy.engine import PolicyEngine
+from deepticket.investigation.registry.mcp_tools import McpToolRegistry
 from deepticket.layers.engine.openhands_engine import OpenHandsEngine
 from deepticket.layers.ingress.pipeline import IngressJobResult
 from deepticket.layers.input.ingress_models import IngressEvent
 from deepticket.layers.input.models import ChatInput, TicketInput
 from deepticket.layers.knowledge.manager import GitSyncResult, KnowledgeManager
 from deepticket.layers.knowledge.skill_manager import SkillInfo, SkillManager
-from deepticket.config.redis_url import redact_redis_url, resolve_redis_url
 from deepticket.layers.storage import create_storage
 from deepticket.layers.storage.base import StorageBackend
 from deepticket.layers.storage.chat_history import ChatHistoryStore
@@ -48,6 +57,19 @@ class DeepTicketService:
         self.storage: StorageBackend = create_storage(config.storage)
         self.users = UserStore(self.storage)
         self.chat_history = ChatHistoryStore(self.storage)
+        # --- Investigation Run 子系统（P0 调查任务 + 治理）---
+        self.investigation_runs = InvestigationRunStore(self.storage)
+        self.run_events = RunEventStore(self.storage, run_store=self.investigation_runs)
+        self.approval_requests = ApprovalRequestStore(self.storage)
+        self.mcp_tool_registry = McpToolRegistry(self.storage)
+        self.policy_engine = PolicyEngine(config.tool_governance)
+        self.governance_gate = ToolGovernanceGate(
+            self.policy_engine,
+            self.run_events,
+            approval_store=self.approval_requests,
+            tool_registry=self.mcp_tool_registry,
+        )
+        self.governance_context_store = GovernanceContextStore(self.storage)
         self.token_usage = TokenUsageStore(self.storage)
         self.projects = ProjectRegistry(self.storage, config, resolve_path=self._resolve_path)
         self.knowledge = KnowledgeManager(config.knowledge)
@@ -69,6 +91,10 @@ class DeepTicketService:
             llm_base_url=llm_base_url,
             workspace_dir=self._resolve_path(config.knowledge.workspace_dir),
         )
+        self.engine.run_events = self.run_events
+        self.engine.governance_gate = self.governance_gate
+        self.engine.governance_context_store = self.governance_context_store
+        self.engine.governance_hook_config = build_hook_config()
         self.routing = RoutingConfig(routes=list(config.ingress.routes))
         self.ingress = IngressRunner(self)
         self.chat = ChatOrchestrator(self)
@@ -128,6 +154,10 @@ class DeepTicketService:
             )
         else:
             self.projects.config_store.ensure_default_project()
+
+        orphaned = self.investigation_runs.fail_orphaned_runs(reason="service restarted")
+        if orphaned:
+            logger.warning("已将 %s 个非终态 InvestigationRun 标记为 failed", orphaned)
 
         await self.engine.ensure_ready()
         try:

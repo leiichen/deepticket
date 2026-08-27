@@ -37,6 +37,12 @@ class LocalStorage(StorageBackend):
             json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8"
         )
 
+    def incr(self, namespace: str, key: str, *, amount: int = 1) -> int:
+        current = self.get_json(namespace, key) or {}
+        next_value = int(current.get("value") or 0) + amount
+        self.set_json(namespace, key, {"value": next_value})
+        return next_value
+
     def delete(self, namespace: str, key: str) -> None:
         path = self._path(namespace, key)
         if path.is_file():

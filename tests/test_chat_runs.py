@@ -6,7 +6,12 @@ from collections.abc import AsyncIterator
 import pytest
 
 from deepticket.chat_runs import ChatRunManager
-from deepticket.layers.input.models import ChatInput
+from deepticket.investigation import InvestigationRunStore
+from deepticket.investigation.events import RunEventStore
+from deepticket.investigation.governance.gate import ToolGovernanceGate
+from deepticket.config.tool_governance import ToolGovernanceConfig
+from deepticket.investigation.policy.engine import PolicyEngine
+from deepticket.layers.input.models import AgentInput, ChatInput
 from deepticket.layers.output.models import StreamChunk
 from deepticket.layers.storage.chat_history import ChatHistoryStore
 from deepticket.layers.storage.local import LocalStorage
@@ -20,6 +25,10 @@ class _FakeService:
     def __init__(self, tmp_path) -> None:
         storage = LocalStorage(str(tmp_path / "data"))
         self.chat_history = ChatHistoryStore(storage)
+        self.investigation_runs = InvestigationRunStore(storage)
+        self.run_events = RunEventStore(storage, run_store=self.investigation_runs)
+        self.policy_engine = PolicyEngine(ToolGovernanceConfig())
+        self.governance_gate = ToolGovernanceGate(self.policy_engine, self.run_events)
         self._chunks: list[StreamChunk] = []
 
     async def _run_stream(self, agent_input) -> AsyncIterator[StreamChunk]:
@@ -45,7 +54,7 @@ async def test_chat_run_persists_after_subscriber_disconnect(tmp_path) -> None:
     )
 
     payload = ChatInput(message="follow up")
-    agent_input = type("AgentInput", (), {"conversation_id": None})()
+    agent_input = AgentInput(prompt="follow up")
 
     run = await manager.start(
         project=project,
@@ -64,9 +73,17 @@ async def test_chat_run_persists_after_subscriber_disconnect(tmp_path) -> None:
     for _ in range(50):
         doc = service.chat_history.get_thread("default", "u1", chat_id)
         assert doc is not None
-        if doc.get("agent_run_status") == "idle":
+        if doc is not None and doc.get("agent_run_status") == "idle":
             messages = doc.get("messages") or []
-            assert any(m.get("role") == "assistant" and m.get("content") == "Hello world" for m in messages)
+            assert any(
+                m.get("role") == "assistant" and m.get("content") == "Hello world"
+                for m in messages
+            )
+            assistant = next(m for m in messages if m.get("role") == "assistant")
+            assert assistant.get("run_id")
+            inv = service.investigation_runs.get_run("default", assistant["run_id"])
+            assert inv is not None
+            assert inv.status.value == "completed"
             return
         await asyncio.sleep(0.05)
 
@@ -95,7 +112,7 @@ async def test_chat_run_status_running_while_in_progress(tmp_path) -> None:
         uid="u1",
         chat_id=chat_id,
         payload=ChatInput(message="q"),
-        agent_input=type("AgentInput", (), {"conversation_id": None})(),
+        agent_input=AgentInput(prompt="q"),
     )
 
     doc = None

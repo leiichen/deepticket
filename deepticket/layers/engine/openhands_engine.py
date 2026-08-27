@@ -1,3 +1,14 @@
+"""OpenHands Agent Server 引擎层（HTTP + WebSocket）。
+
+与 Investigation 的接点：
+- ``run_events`` / ``governance_gate`` 由 ``DeepTicketService`` 注入（可选，测试时可 None）
+- ``_push_event``：每条 OH 事件经治理评估 + 映射写入 RunEvent
+- ``run_stream``：``async generator``，向 ChatRunManager 持续 ``yield StreamChunk``
+
+治理分支（ActionEvent + MCP）：
+- REQUIRE_APPROVAL：cancel conversation + ``PolicyApprovalRequiredError`` → waiting_approval
+- DENY：向 OH 会话 post 系统消息，Agent 继续解释，Run 仍可能 COMPLETED（软拒绝）
+"""
 from __future__ import annotations
 
 import logging
@@ -13,7 +24,12 @@ from typing import Any
 import httpx
 import websockets
 
-from deepticket.config.schema import EngineConfig
+from deepticket.config.tool_governance import PolicyDecision
+from deepticket.investigation.event_mapper import extract_mcp_tool_call, map_openhands_event
+from deepticket.investigation.events import RunEventStore
+from deepticket.investigation.exceptions import PolicyApprovalRequiredError, PolicyDeniedError
+from deepticket.investigation.governance.gate import ToolGovernanceGate
+from deepticket.investigation.governance.session_context import GovernanceContextStore
 from deepticket.layers.engine.conversation_history import (
     extract_message_text,
     format_history_prompt,
@@ -54,6 +70,10 @@ class OpenHandsEngine:
         self.gateway_model = f"openhands_{config.llm_profile}"
         self._settings_cache_key: tuple[str, str, str, str, str] | None = None
         self._settings_cache_value: dict[str, Any] | None = None
+        self.run_events: RunEventStore | None = None
+        self.governance_gate: ToolGovernanceGate | None = None
+        self.governance_context_store: GovernanceContextStore | None = None
+        self.governance_hook_config: dict[str, Any] | None = None
 
     def _invalidate_settings_cache(self) -> None:
         self._settings_cache_key = None
@@ -240,6 +260,37 @@ class OpenHandsEngine:
         self._settings_cache_value = settings
         return copy.deepcopy(settings)
 
+    def _conversation_governance_payload(
+        self, agent_input: AgentInput
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {}
+        if self.governance_hook_config:
+            payload["hook_config"] = self.governance_hook_config
+        # 不在 OH tags 里传 project_id/run_id 等：键名只允许小写字母数字（无 _），
+        # 否则会 422。治理上下文改由 _register_governance_session 写 Redis。
+        _ = agent_input
+        return payload
+
+    def _register_governance_session(
+        self,
+        *,
+        conversation_id: str,
+        agent_input: AgentInput,
+    ) -> None:
+        if self.governance_context_store is None or not agent_input.run_id:
+            return
+        uid = str(agent_input.metadata.get("deepticket_uid") or "unknown")
+        chat_id = agent_input.metadata.get("deepticket_chat_id")
+        is_admin = bool(agent_input.metadata.get("deepticket_user_is_admin"))
+        self.governance_context_store.register(
+            oh_conversation_id=conversation_id,
+            project_id=agent_input.project_id or "default",
+            run_id=agent_input.run_id,
+            uid=uid,
+            chat_id=str(chat_id) if chat_id else None,
+            user_is_admin=is_admin,
+        )
+
     async def _start_conversation(
         self,
         client: httpx.AsyncClient,
@@ -258,6 +309,7 @@ class OpenHandsEngine:
                 "run": True,
             },
             "autotitle": False,
+            **self._conversation_governance_payload(agent_input),
         }
         if agent_input.conversation_id:
             body["conversation_id"] = agent_input.conversation_id
@@ -274,7 +326,9 @@ class OpenHandsEngine:
         conversation_id = data.get("id") or data.get("conversation_id")
         if not conversation_id:
             raise RuntimeError("Agent Server 未返回 conversation_id")
-        return str(conversation_id)
+        conv_id = str(conversation_id)
+        self._register_governance_session(conversation_id=conv_id, agent_input=agent_input)
+        return conv_id
 
     async def _create_conversation_shell(
         self,
@@ -292,6 +346,9 @@ class OpenHandsEngine:
         }
         if conversation_id:
             body["conversation_id"] = conversation_id
+        # shell 无 agent_input 时仅带 hook_config（上下文在后续 message run 前 register）
+        if self.governance_hook_config:
+            body["hook_config"] = self.governance_hook_config
         resp = await client.post(
             f"{self.server}/api/conversations",
             headers=self._headers(),
@@ -449,6 +506,10 @@ class OpenHandsEngine:
                     if history_is_synced(openhands_messages, history):
                         baseline = probe.json().get("leaf_event_id")
                         await self._send_message(client, stored_id, agent_input)
+                        self._register_governance_session(
+                            conversation_id=stored_id,
+                            agent_input=agent_input,
+                        )
                         return (
                             stored_id,
                             str(baseline) if baseline else None,
@@ -460,6 +521,10 @@ class OpenHandsEngine:
                 else:
                     baseline = probe.json().get("leaf_event_id")
                     await self._send_message(client, stored_id, agent_input)
+                    self._register_governance_session(
+                        conversation_id=stored_id,
+                        agent_input=agent_input,
+                    )
                     return (
                         stored_id,
                         str(baseline) if baseline else None,
@@ -478,6 +543,10 @@ class OpenHandsEngine:
                 agent_settings,
                 history,
                 workspace_dir=workspace_dir,
+            )
+            self._register_governance_session(
+                conversation_id=conv_id,
+                agent_input=agent_input,
             )
             return conv_id, None
 
@@ -515,6 +584,12 @@ class OpenHandsEngine:
         seen_event_ids: set[str],
         out_queue: asyncio.Queue[StreamChunk | None],
         reply_state: ReplyStreamState,
+        project_id: str | None = None,
+        run_id: str | None = None,
+        conversation_id: str | None = None,
+        poll_stop: asyncio.Event | None = None,
+        policy_state: dict[str, Any] | None = None,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         kind = event.get("kind") or ""
 
@@ -531,6 +606,115 @@ class OpenHandsEngine:
             if event_id in seen_event_ids:
                 return
             seen_event_ids.add(event_id)
+
+        # --- MCP 工具治理（PreToolUse 硬拦截为主；此处为 SSE 提示 / 无 hook 时兜底）---
+        policy_blocked_tool = False
+        if (
+            not self.governance_hook_config
+            and run_id
+            and project_id
+            and self.run_events is not None
+            and kind == "ActionEvent"
+            and self.governance_gate is not None
+        ):
+            mcp_call = extract_mcp_tool_call(event)
+            if mcp_call is not None:
+                mcp_server, tool_name, arguments = mcp_call
+                uid = str(policy_state.get("uid") or "") if policy_state else ""
+                result = self.governance_gate.evaluate_mcp_tool(
+                    project_id=project_id,
+                    run_id=run_id,
+                    mcp_server=mcp_server,
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    uid=uid,
+                )
+                if result.blocked:
+                    policy_blocked_tool = True
+                    if policy_state is not None:
+                        policy_state["message"] = result.block_message
+                        policy_state["decision"] = result.evaluation.decision.value
+                        if result.waiting_approval:
+                            policy_state["blocked"] = True
+                            policy_state["waiting_approval"] = True
+                            policy_state["approval_id"] = result.approval_id
+                            policy_state["tool_name"] = tool_name
+                            policy_state["mcp_server"] = mcp_server
+                        elif result.evaluation.decision is PolicyDecision.DENY:
+                            policy_state["policy_denied"] = True
+                    await out_queue.put(
+                        StreamChunk(
+                            activity=str(result.block_message or "Tool blocked by policy"),
+                            activity_kind="error",
+                        )
+                    )
+                    if result.waiting_approval:
+                        if (
+                            run_id
+                            and project_id
+                            and self.run_events is not None
+                        ):
+                            from deepticket.investigation.governance.approval_pause import (
+                                mark_run_waiting_approval,
+                            )
+
+                            mark_run_waiting_approval(
+                                self.run_events.storage,
+                                project_id=project_id,
+                                run_id=run_id,
+                                uid=str(policy_state.get("uid") or "") if policy_state else "",
+                                chat_id=(
+                                    str(policy_state.get("chat_id"))
+                                    if policy_state and policy_state.get("chat_id")
+                                    else None
+                                ),
+                                message=str(result.block_message or "Tool requires approval"),
+                                event_store=self.run_events,
+                            )
+                        if conversation_id:
+                            await self.cancel_conversation(conversation_id)
+                        if poll_stop is not None:
+                            poll_stop.set()
+                    elif result.evaluation.decision is PolicyDecision.DENY:
+                        if (
+                            client is not None
+                            and conversation_id
+                            and policy_state is not None
+                            and not policy_state.get("deny_notified")
+                        ):
+                            policy_state["deny_notified"] = True
+                            notice = (
+                                f"[Governance] Tool `{tool_name}` was denied by policy "
+                                f"({result.evaluation.matched_rule}) and did not run. "
+                                "Do not retry this tool. Tell the user the call was blocked "
+                                "and suggest safe alternatives if any."
+                            )
+                            try:
+                                await self._post_conversation_message(
+                                    client,
+                                    conversation_id,
+                                    content=notice,
+                                    run=True,
+                                )
+                            except RuntimeError as exc:
+                                logger.warning("策略拒绝通知 Agent 失败: %s", exc)
+
+        if (
+            run_id
+            and project_id
+            and self.run_events is not None
+            and not policy_blocked_tool
+        ):
+            mapped = map_openhands_event(event)
+            if mapped is not None:
+                event_type, payload = mapped
+                self.run_events.append(
+                    project_id,
+                    run_id,
+                    event_type,
+                    payload,
+                    oh_event_id=str(event_id) if event_id else None,
+                )
 
         if kind == "ActionEvent" and event.get("source") == "agent":
             reply_state.reset_turn()
@@ -549,6 +733,10 @@ class OpenHandsEngine:
         out_queue: asyncio.Queue[StreamChunk | None],
         poll_stop: asyncio.Event,
         reply_state: ReplyStreamState,
+        project_id: str | None = None,
+        run_id: str | None = None,
+        policy_state: dict[str, Any] | None = None,
+        client: httpx.AsyncClient | None = None,
     ) -> None:
         ws_headers: dict[str, str] = {}
         if self.config.session_api_key:
@@ -578,6 +766,12 @@ class OpenHandsEngine:
                             seen_event_ids=seen_event_ids,
                             out_queue=out_queue,
                             reply_state=reply_state,
+                            project_id=project_id,
+                            run_id=run_id,
+                            conversation_id=conversation_id,
+                            poll_stop=poll_stop,
+                            policy_state=policy_state,
+                            client=client,
                         )
         except Exception:
             await out_queue.put(
@@ -588,11 +782,14 @@ class OpenHandsEngine:
             )
             await self._poll_agent_activities(
                 conversation_id,
-                client=None,
+                client=client,
                 seen_event_ids=seen_event_ids,
                 out_queue=out_queue,
                 poll_stop=poll_stop,
                 reply_state=reply_state,
+                project_id=project_id,
+                run_id=run_id,
+                policy_state=policy_state,
             )
 
     async def _poll_agent_activities(
@@ -604,6 +801,9 @@ class OpenHandsEngine:
         out_queue: asyncio.Queue[StreamChunk | None],
         poll_stop: asyncio.Event,
         reply_state: ReplyStreamState,
+        project_id: str | None = None,
+        run_id: str | None = None,
+        policy_state: dict[str, Any] | None = None,
     ) -> None:
         owns_client = client is None
         if client is None:
@@ -624,6 +824,12 @@ class OpenHandsEngine:
                             seen_event_ids=seen_event_ids,
                             out_queue=out_queue,
                             reply_state=reply_state,
+                            project_id=project_id,
+                            run_id=run_id,
+                            conversation_id=conversation_id,
+                            poll_stop=poll_stop,
+                            policy_state=policy_state,
+                            client=client,
                         )
                 except httpx.HTTPError as exc:
                     logger.debug("Agent 活动轮询失败: %s", exc)
@@ -781,6 +987,15 @@ class OpenHandsEngine:
         poll_stop = asyncio.Event()
         seen_event_ids: set[str] = set()
         reply_state = ReplyStreamState()
+        policy_state: dict[str, Any] = {
+            "blocked": False,
+            "message": None,
+            "policy_denied": False,
+            "uid": str(agent_input.metadata.get("deepticket_uid") or ""),
+            "chat_id": agent_input.metadata.get("deepticket_chat_id"),
+        }
+        project_id = agent_input.project_id
+        run_id = agent_input.run_id
 
         errors: list[BaseException] = []
 
@@ -789,6 +1004,8 @@ class OpenHandsEngine:
             ws_task: asyncio.Task[None] | None = None
             conversation_id: str | None = None
             try:
+                if run_id:
+                    await out_queue.put(StreamChunk(run_id=run_id))
                 await out_queue.put(
                     StreamChunk(activity="正在连接 Agent…", activity_kind="system")
                 )
@@ -821,6 +1038,10 @@ class OpenHandsEngine:
                         out_queue=out_queue,
                         poll_stop=poll_stop,
                         reply_state=reply_state,
+                        project_id=project_id,
+                        run_id=run_id,
+                        policy_state=policy_state,
+                        client=client,
                     )
                 )
                 await self._wait_for_agent_done(
@@ -833,6 +1054,14 @@ class OpenHandsEngine:
                         else None
                     ),
                 )
+                if policy_state.get("waiting_approval"):
+                    # 硬停：Run 进入 waiting_approval，等人 API approve 后 resume
+                    raise PolicyApprovalRequiredError(
+                        str(policy_state.get("message") or "Tool requires approval"),
+                        approval_id=str(policy_state.get("approval_id") or ""),
+                        tool_name=str(policy_state.get("tool_name") or ""),
+                        mcp_server=str(policy_state.get("mcp_server") or ""),
+                    )
                 poll_stop.set()
                 if ws_task is not None:
                     try:
@@ -847,6 +1076,14 @@ class OpenHandsEngine:
                     if detail:
                         raise RuntimeError(detail)
                 await self._emit_final_reply(final_text, reply_state, out_queue)
+                if policy_state.get("policy_denied"):
+                    # 软拒绝：Agent 已继续跑完，标记 chunk 供 ChatRunManager 写入 error_message
+                    await out_queue.put(
+                        StreamChunk(
+                            policy_denied=True,
+                            policy_message=str(policy_state.get("message") or ""),
+                        )
+                    )
             except httpx.HTTPError as exc:
                 errors.append(RuntimeError(f"Agent Server 请求失败: {exc}"))
             except BaseException as exc:

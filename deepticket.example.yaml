@@ -136,5 +136,21 @@ ingress:
         method: store_only
 
 # MCP 默认关闭；按需在各项目「项目配置 → MCP」添加真实 stdio Server（勿用 echo 占位）
+# Governance 联调示例（fixtures/demo_mcp，需在仓库根目录启动 Agent Server）:
+#   deepticket-demo:
+#     transport: stdio
+#     command: /ABS/PATH/deepticket/.venv/bin/python
+#     args: ["-m", "fixtures.demo_mcp"]
+#     enabled: true
 mcp:
   servers: {}
+
+# Tool 治理（P0）：显式 PolicyDecision，不映射 OH SecurityRisk
+# tool_governance:
+#   global:
+#     default: allow
+#   tools:
+#     demo_delete_resource:
+#       decision: deny
+#     demo_exec_command:
+#       decision: require_approval

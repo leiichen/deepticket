@@ -53,3 +53,19 @@ demo/
 scripts/demo/
 docs/demo-ad-agent.md
 tests/test_ad_roi_demo.py
+
+# 本地推广 / 生图草稿（勿提交）
+resume/
+docs/promotion/
+docs/assets/comfyui/
+docs/assets/mascot/
+docs/assets/juejin-cover*
+docs/assets/_bug-*.png
+docs/assets/_wm-*.png
+docs/assets/architecture-option-*
+docs/assets/architecture-preview.html
+docs/assets/banner-header-cutout-*
+docs/assets/demo-hq.mp4
+docs/promotion-platform-guide.html
+scripts/comfyui/
+ffmpeg2pass*.log*

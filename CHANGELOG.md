@@ -10,6 +10,28 @@
 
 ---
 
+## [0.4.0] - 2026-08-25
+
+### Added
+
+- **InvestigationRun 持久化**：Redis 存储 Run 实体、状态机（含 `WAITING_APPROVAL` / `BLOCKED`）、chat/ingress 索引
+- **Run 事件流**：`RunEventStore` 结构化 Timeline；`GET /api/runs/{id}/events`
+- **Tool 治理（P0）**：`tool_governance` YAML 策略（allow / deny / require_approval）、`ToolGovernanceGate`、`PreToolUse` Hook
+- **审批 HITL**：`ApprovalRequestStore`；`POST /api/runs/{id}/approve|reject`；批准后 one-time tool grant 续跑
+- **Runs API**：`GET /api/runs/{id}`、cancel、审批；聊天 `/status` 暴露 investigation_run 与 pending_approval
+- **Demo MCP**：`fixtures/demo_mcp`（`demo_exec_command` 等）供治理联调
+- **测试与脚本**：governance 单测/集成测、`scripts/selftest_approval_flow.py`、`scripts/run_governance_tests.sh`
+- **前端**：Run 时间线、审批 UI、聊天状态与 SSE 增强（`app.js` / `style.css`）
+
+### Changed
+
+- **ChatRunManager / ChatOrchestrator**：创建 InvestigationRun、治理暂停与 `resume_after_approval`
+- **OpenHandsEngine**：治理上下文、WebSocket 事件映射、审批异常 `PolicyApprovalRequiredError`
+- **IngressRunner**：统一 Run 生命周期
+- **pytest**：`pythonpath = ["."]` 修复 `tests.helpers` 导入
+
+---
+
 ## [0.3.3] - 2026-08-21
 
 ### Added

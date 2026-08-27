@@ -1,6 +1,6 @@
 [project]
 name = "deepticket"
-version = "0.3.3"
+version = "0.4.0"
 description = "AI Agent platform for incident triage and project Q&A on OpenHands — Git sync, logs, config center, Ingress/Webhook"
 readme = "README.md"
 license = "MIT"
@@ -81,6 +81,7 @@ deepticket = [
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["."]
 asyncio_mode = "auto"
 filterwarnings = ["ignore::DeprecationWarning"]
 

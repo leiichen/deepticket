@@ -96,6 +96,10 @@
           </div>
         </div>
         <div class="topbar-right">
+          <div id="runStatusPill" class="run-status-pill hidden" title="Investigation Run 状态">
+            <span class="run-status-dot"></span>
+            <span id="runStatusText">—</span>
+          </div>
           <div id="statusPill" class="status-pill ready">
             <span class="status-dot"></span>
             <span id="status">就绪</span>
@@ -298,6 +302,19 @@
         </div>
       </div>
 
+      <div id="runApprovalBanner" class="run-approval-banner hidden" aria-live="polite">
+        <div class="run-approval-banner-body">
+          <div class="run-approval-banner-text">
+            <strong>工具调用待审批</strong>
+            <span id="runApprovalToolHint">—</span>
+          </div>
+          <div class="run-approval-banner-actions">
+            <button id="runApprovalApproveBtn" type="button" class="btn btn-primary btn-sm">批准</button>
+            <button id="runApprovalRejectBtn" type="button" class="btn btn-secondary btn-sm">拒绝</button>
+          </div>
+        </div>
+      </div>
+
       <div class="composer-zone">
         <form id="chatForm" class="composer">
           <div class="composer-inner">
@@ -325,6 +342,6 @@
 
   <div id="toastStack" class="toast-stack"></div>
 
-  <script type="module" src="/static/app.js?v=32"></script>
+  <script type="module" src="/static/app.js?v=34"></script>
 </body>
 </html>
