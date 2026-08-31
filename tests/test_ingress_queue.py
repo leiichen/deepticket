@@ -22,9 +22,9 @@ async def test_ingress_queue_processes_items_in_order() -> None:
 
     event = IngressEvent(
         source="test",
+        project_id="default",
         external_id="1",
-        title="t",
-        body="b",
+        question="hello",
     )
     await queue.enqueue(IngressQueueItem(job_id="job-a", event=event))
     await queue.enqueue(IngressQueueItem(job_id="job-b", event=event))

@@ -8,15 +8,8 @@ def classify_ingress_event(
     event: IngressEvent,
     routing: RoutingConfig,
 ) -> RouteConfig:
-    """按配置规则判定事件类型；显式 type 优先，否则规则匹配，最后 default。"""
-    if event.type:
-        explicit = routing.route_for_type(event.type)
-        if explicit is not None:
-            return explicit
-        raise ValueError(f"未知路由类型: {event.type}")
-
-    haystack = f"{event.title}\n{event.body}".lower()
-    title_lower = event.title.lower()
+    """按 source（及可选 question 关键词）匹配路由，未命中则走 default。"""
+    question_lower = event.question.lower()
     source_lower = event.source.lower()
 
     for route in routing.routes:
@@ -28,11 +21,11 @@ def classify_ingress_event(
         }:
             continue
         if match_cfg.title_keywords and not any(
-            kw.lower() in title_lower for kw in match_cfg.title_keywords
+            kw.lower() in question_lower for kw in match_cfg.title_keywords
         ):
             continue
         if match_cfg.body_keywords and not any(
-            kw.lower() in haystack for kw in match_cfg.body_keywords
+            kw.lower() in question_lower for kw in match_cfg.body_keywords
         ):
             continue
         return route

@@ -96,17 +96,16 @@ def test_ingress_ticket_webhook_roundtrip(
         headers=INGRESS_AUTH_HEADERS,
         json={
             "source": "jira",
+            "project_id": "default",
             "external_id": "T-9001",
-            "title": "接口 500",
-            "body": "订单服务报错，请分析",
-            "type": "ticket",
+            "question": "订单服务报错，请分析",
+            "extensions": {"ticket_key": "T-9001"},
         },
     )
     assert resp.status_code == 202, resp.text
     queued = resp.json()
     assert queued["status"] == "queued"
     data = _wait_for_job(ingress_client, queued["job_id"])
-    assert data["route_type"] == "ticket"
     assert data["outbound_method"] == "webhook"
     assert data["outbound_ok"] is True
     assert "根因" in data["reply"]
@@ -115,8 +114,9 @@ def test_ingress_ticket_webhook_roundtrip(
     callback = received[0]
     assert callback["external_id"] == "T-9001"
     assert callback["source"] == "jira"
-    assert callback["type"] == "ticket"
+    assert callback["project_id"] == "default"
     assert callback["reply"]
+    assert callback["extensions"] == {"ticket_key": "T-9001"}
 
     messages = [record.getMessage() for record in caplog.records]
     assert any("Ingress 任务入队" in msg for msg in messages)

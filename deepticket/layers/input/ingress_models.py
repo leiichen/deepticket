@@ -9,11 +9,8 @@ class IngressEvent:
     """外部系统推送的统一输入结构。"""
 
     source: str
+    project_id: str
     external_id: str
-    title: str
-    body: str
-    type: str | None = None
-    repo_ids: list[str] = field(default_factory=list)
-    logs: str = ""
+    question: str
     image_urls: list[str] = field(default_factory=list)
-    metadata: dict[str, Any] = field(default_factory=dict)
+    extensions: dict[str, Any] = field(default_factory=dict)

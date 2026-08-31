@@ -245,7 +245,7 @@ class IngressSettings(BaseModel):
         description=(
             "路由规则列表，按声明顺序匹配。"
             "每条含 match（来源/关键词）、outbound（store_only 或 webhook）、"
-            "可选 prompt_suffix 与 repo_ids"
+            "可选 prompt_suffix"
         ),
     )
 

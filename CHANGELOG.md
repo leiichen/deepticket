@@ -8,6 +8,18 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **Ingress 外部契约精简（破坏性变更）**：`POST /api/ingress/events` 输入改为 `source`、`project_id`、`external_id`、`question`、可选 `image_urls` 与 `extensions`；移除 `title`、`body`、`repo_ids`、`type`、`metadata`
+- **Ingress 路由**：按 `source` 匹配出站路由；`project_id` 决定关联代码仓库与 MCP（不再写死 default 项目）
+- **Ingress 出站**：Webhook / `GET /api/ingress/jobs/{id}` 返回 `reply` + 原样回传 `extensions`；移除 `route_type`、`conversation_id`、`metadata` 等旧字段
+- **Ingress 分类器**：关键词匹配改为针对 `question` 文本（配置项 `title_keywords` / `body_keywords` 仍可用）
+
+### Removed
+
+- Ingress 请求字段：`title`、`body`、`repo_ids`、`type`、`metadata`
+- Ingress 响应 / Webhook 字段：`route_type`、`conversation_id`、`metadata`（及 Webhook 中的 `job_id`、`type`）
+
 ---
 
 ## [0.4.0] - 2026-08-25

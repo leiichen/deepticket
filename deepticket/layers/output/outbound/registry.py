@@ -47,10 +47,10 @@ class WebhookOutbound:
             )
 
         logger.info(
-            "Webhook 投递请求: url=%s external_id=%s job_id=%s",
+            "Webhook 投递请求: url=%s external_id=%s source=%s",
             url,
             payload.external_id,
-            payload.job_id,
+            payload.source,
         )
 
         headers = {"Content-Type": "application/json"}
@@ -68,15 +68,13 @@ class WebhookOutbound:
                     )
 
         body = {
-            "job_id": payload.job_id,
-            "type": payload.route_type,
             "source": payload.source,
+            "project_id": payload.project_id,
             "external_id": payload.external_id,
             "status": payload.status,
             "reply": payload.reply,
-            "conversation_id": payload.conversation_id,
+            "extensions": payload.extensions,
             "error": payload.error,
-            "metadata": payload.metadata,
         }
 
         try:

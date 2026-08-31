@@ -37,15 +37,16 @@ async def ingest_event(
     service = get_service(request)
     event = IngressEvent(
         source=body.source,
+        project_id=body.project_id,
         external_id=body.external_id,
-        title=body.title,
-        body=body.body,
-        type=body.type,
-        repo_ids=list(body.repo_ids),
-        logs=body.logs,
+        question=body.question,
         image_urls=list(body.image_urls),
-        metadata=dict(body.metadata),
+        extensions=dict(body.extensions),
     )
+    try:
+        service.projects.require(body.project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     try:
         result = await service.submit_ingress_event(event)
     except ValueError as exc:
@@ -68,4 +69,5 @@ async def get_job(
     doc = service.get_ingress_job(job_id)
     if doc is None:
         raise HTTPException(status_code=404, detail="任务不存在")
-    return IngressJobResponse(**doc)
+    payload = {k: v for k, v in doc.items() if k not in {"updated_at", "route_type"}}
+    return IngressJobResponse(**payload)
