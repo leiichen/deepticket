@@ -76,9 +76,9 @@ def test_ingress_requires_api_key(client: TestClient):
         "/api/ingress/events",
         json={
             "source": "monitor",
+            "project_id": "default",
             "external_id": "x1",
-            "title": "500 error",
-            "body": "details",
+            "question": "500 error details",
         },
     )
     assert resp.status_code == 401
@@ -90,19 +90,22 @@ def test_ingress_accepts_event_async(client: TestClient):
         headers=INGRESS_AUTH_HEADERS,
         json={
             "source": "monitor",
+            "project_id": "default",
             "external_id": "x1",
-            "title": "500 error",
-            "body": "details",
+            "question": "500 error details",
+            "extensions": {"tenant_id": "acme"},
         },
     )
     assert resp.status_code == 202, resp.text
     data = resp.json()
     assert data["status"] == "queued"
     assert data["job_id"]
+    assert data["extensions"] == {"tenant_id": "acme"}
 
     finished = _wait_for_job(client, data["job_id"])
     assert finished["status"] == "finished"
     assert finished["reply"] == "analysis done"
+    assert finished["extensions"] == {"tenant_id": "acme"}
 
 
 def test_ingress_list_routes(client: TestClient):

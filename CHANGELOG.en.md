@@ -8,6 +8,18 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **Slim Ingress contract (breaking)**: `POST /api/ingress/events` now accepts `source`, `project_id`, `external_id`, `question`, optional `image_urls` and `extensions`; removed `title`, `body`, `repo_ids`, `type`, `metadata`
+- **Ingress routing**: match outbound route by `source`; `project_id` selects repos and MCP (no longer hard-coded default project)
+- **Ingress outbound**: Webhook / `GET /api/ingress/jobs/{id}` return `reply` plus passthrough `extensions`; dropped `route_type`, `conversation_id`, `metadata`, and Webhook `job_id` / `type`
+- **Ingress classifier**: keyword rules apply to `question` text (`title_keywords` / `body_keywords` in config unchanged)
+
+### Removed
+
+- Ingress request fields: `title`, `body`, `repo_ids`, `type`, `metadata`
+- Ingress response / Webhook fields: `route_type`, `conversation_id`, `metadata` (and Webhook `job_id`, `type`)
+
 ---
 
 ## [0.3.3] - 2026-08-21

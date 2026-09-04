@@ -6,15 +6,13 @@ from typing import Any
 
 @dataclass
 class OutboundPayload:
-    job_id: str
-    route_type: str
     source: str
+    project_id: str
     external_id: str
     status: str
     reply: str = ""
-    conversation_id: str | None = None
+    extensions: dict[str, Any] = field(default_factory=dict)
     error: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

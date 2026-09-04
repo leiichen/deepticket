@@ -10,16 +10,16 @@ from deepticket.layers.output.models import StreamChunk
 @dataclass
 class IngressJobResult:
     job_id: str
-    route_type: str
-    source: str
-    external_id: str
     status: str
+    source: str
+    project_id: str
+    external_id: str
     reply: str
-    conversation_id: str | None
-    outbound_method: str
-    outbound_ok: bool
-    outbound_detail: str
-    metadata: dict[str, Any]
+    extensions: dict[str, Any]
+    error: str | None = None
+    outbound_method: str = ""
+    outbound_ok: bool = False
+    outbound_detail: str = ""
 
 
 async def collect_stream_text(
@@ -45,11 +45,10 @@ async def collect_stream_text(
             if chunk.confidence:
                 confidence = chunk.confidence
     reply = "".join(parts)
-    if confidence is None:
+    if confidence is None and reply:
         confidence = compute_confidence(
             activities=activities,
             reply=reply,
             ok=True,
-            require_analysis=False,
         )
     return reply, conversation_id, confidence

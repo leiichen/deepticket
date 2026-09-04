@@ -90,17 +90,13 @@ def test_ingress_adapter_passes_image_urls() -> None:
     )
     event = IngressEvent(
         source="jira",
+        project_id="default",
         external_id="IMG-1",
-        title="截图报错",
-        body="页面白屏",
+        question="页面白屏",
         image_urls=["https://example.com/screen.png"],
-        metadata={"image_urls": ["https://example.com/ignored-dup.png"]},
     )
     ticket = IngressAdapter.to_ticket(event, route)
-    assert ticket.image_urls == [
-        "https://example.com/screen.png",
-        "https://example.com/ignored-dup.png",
-    ]
+    assert ticket.image_urls == ["https://example.com/screen.png"]
 
 
 def test_input_adapter_builds_multimodal_agent_input() -> None:

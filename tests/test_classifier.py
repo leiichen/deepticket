@@ -31,44 +31,31 @@ def routing() -> RoutingConfig:
 def test_classify_by_source_and_keyword(routing: RoutingConfig):
     event = IngressEvent(
         source="monitor",
+        project_id="default",
         external_id="a1",
-        title="API 500 spike",
-        body="error rate high",
+        question="API 500 spike, error rate high",
     )
     route = classify_ingress_event(event, routing)
     assert route.type == "incident"
 
 
-def test_classify_explicit_type(routing: RoutingConfig):
+def test_classify_source_without_keyword_falls_back_to_default(routing: RoutingConfig):
     event = IngressEvent(
-        source="anything",
+        source="monitor",
+        project_id="default",
         external_id="a2",
-        title="hello",
-        body="world",
-        type="default",
+        question="latency increased",
     )
     route = classify_ingress_event(event, routing)
     assert route.type == "default"
 
 
-def test_classify_unknown_explicit_type_raises(routing: RoutingConfig):
-    event = IngressEvent(
-        source="x",
-        external_id="a3",
-        title="t",
-        body="b",
-        type="unknown-type",
-    )
-    with pytest.raises(ValueError, match="未知路由类型"):
-        classify_ingress_event(event, routing)
-
-
 def test_classify_fallback_default(routing: RoutingConfig):
     event = IngressEvent(
         source="email",
+        project_id="default",
         external_id="a4",
-        title="weekly report",
-        body="stats attached",
+        question="weekly report stats attached",
     )
     route = classify_ingress_event(event, routing)
     assert route.type == "default"

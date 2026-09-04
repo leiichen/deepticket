@@ -80,10 +80,9 @@ RESP=$(curl -s -w '\nHTTP_CODE:%{http_code}' -X POST "${BASE}/api/ingress/events
   -H "X-Ingress-API-Key: ${INGRESS_KEY}" \
   -d '{
     "source": "jira",
+    "project_id": "default",
     "external_id": "DEMO-1001",
-    "title": "接口超时排查",
-    "body": "用户反馈下单接口 P99 超过 3s",
-    "type": "ticket"
+    "question": "用户反馈下单接口 P99 超过 3s"
   }')
 HTTP_CODE="${RESP##*HTTP_CODE:}"
 BODY="${RESP%HTTP_CODE:*}"

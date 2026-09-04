@@ -43,9 +43,16 @@ class InputAdapter:
             lines = "\n".join(f"- {url}" for url in image_urls)
             images_block = f"\n\n--- 附件图片 ---\n{lines}"
 
+        description = payload.description.strip()
+        if payload.title.strip():
+            prompt = (
+                f"工单 {payload.ticket_id}: {payload.title.strip()}\n\n"
+                f"{description}"
+            )
+        else:
+            prompt = description
         prompt = (
-            f"工单 {payload.ticket_id}: {payload.title}\n\n"
-            f"{payload.description.strip()}"
+            f"{prompt}"
             f"{repo_hint}"
             f"{logs_block}"
             f"{images_block}\n\n"

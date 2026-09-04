@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import logging
 import uuid
 from dataclasses import asdict
@@ -10,8 +11,6 @@ from deepticket.layers.ingress.queue import IngressJobQueue, IngressQueueItem
 from deepticket.layers.input.classifier import classify_ingress_event
 from deepticket.layers.input.ingress_adapter import IngressAdapter
 from deepticket.layers.input.ingress_models import IngressEvent
-from deepticket.layers.output.confidence import compute_confidence
-from deepticket.layers.output.models import StreamChunk
 from deepticket.layers.output.outbound.registry import get_outbound_handler
 from deepticket.layers.output.outbound_models import OutboundPayload
 from deepticket.layers.storage.json_index import count_indexed_keys, index_json_key, list_indexed_json_keys
@@ -23,6 +22,10 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 _metrics = get_metrics()
+
+
+def _snapshot_extensions(extensions: dict) -> dict:
+    return copy.deepcopy(extensions)
 
 
 class IngressRunner:
@@ -65,6 +68,7 @@ class IngressRunner:
                     "job_id": doc.get("job_id", key),
                     "status": doc.get("status", "unknown"),
                     "source": doc.get("source", ""),
+                    "project_id": doc.get("project_id", ""),
                     "external_id": doc.get("external_id", ""),
                     "route_type": doc.get("route_type", ""),
                     "outbound_method": doc.get("outbound_method", ""),
@@ -89,16 +93,15 @@ class IngressRunner:
             "job_id": job_id,
             "status": "failed",
             "reply": existing.get("reply") or "",
+            "error": error,
             "outbound_ok": False,
             "outbound_detail": error[:500],
-            "metadata": {
-                **(existing.get("metadata") or {}),
-                "error": error,
-            },
         }
         if event is not None:
             doc.setdefault("source", event.source)
+            doc.setdefault("project_id", event.project_id)
             doc.setdefault("external_id", event.external_id)
+            doc.setdefault("extensions", _snapshot_extensions(event.extensions))
         self._persist_job(job_id, doc)
         _metrics.record_ingress_job(ok=False)
         logger.error("Ingress 任务失败: job_id=%s error=%s", job_id, error)
@@ -120,51 +123,39 @@ class IngressRunner:
 
     async def submit(self, event: IngressEvent) -> IngressJobResult:
         self._service.require_llm_configured()
+        self._service.projects.require(event.project_id)
         route = classify_ingress_event(event, self._service.routing)
-        ticket = IngressAdapter.to_ticket(event, route)
+        extensions = _snapshot_extensions(event.extensions)
         job_id = uuid.uuid4().hex
 
         queued_doc = {
             "job_id": job_id,
             "route_type": route.type,
             "source": event.source,
+            "project_id": event.project_id,
             "external_id": event.external_id,
             "status": "queued",
             "reply": "",
-            "conversation_id": None,
+            "extensions": extensions,
+            "error": None,
             "outbound_method": route.outbound.method,
             "outbound_ok": False,
             "outbound_detail": "已入队，等待处理",
-            "metadata": ticket.metadata,
             "updated_at": utc_now_iso(),
         }
         self._persist_job(job_id, queued_doc)
         await self._queue.enqueue(IngressQueueItem(job_id=job_id, event=event))
         logger.info(
-            "Ingress 任务入队: job_id=%s source=%s external_id=%s route=%s queue=%s",
+            "Ingress 任务入队: job_id=%s source=%s project_id=%s external_id=%s route=%s queue=%s",
             job_id,
             event.source,
+            event.project_id,
             event.external_id,
             route.type,
             self._queue.qsize(),
         )
-        payload = {k: v for k, v in queued_doc.items() if k != "updated_at"}
+        payload = {k: v for k, v in queued_doc.items() if k not in {"updated_at", "route_type"}}
         return IngressJobResult(**payload)
-
-    @staticmethod
-    def _confidence_chunk(
-        *,
-        activities: list[dict[str, str]],
-        reply: str,
-        ok: bool = True,
-    ) -> StreamChunk:
-        return StreamChunk(
-            confidence=compute_confidence(
-                activities=activities,
-                reply=reply,
-                ok=ok,
-            )
-        )
 
     async def run_event(
         self,
@@ -174,15 +165,19 @@ class IngressRunner:
     ) -> IngressJobResult:
         route = classify_ingress_event(event, self._service.routing)
         ticket = IngressAdapter.to_ticket(event, route)
+        extensions = _snapshot_extensions(event.extensions)
         if job_id is None:
             job_id = uuid.uuid4().hex
             running_doc = {
                 "job_id": job_id,
                 "route_type": route.type,
                 "source": event.source,
+                "project_id": event.project_id,
                 "external_id": event.external_id,
                 "status": "running",
-                "metadata": ticket.metadata,
+                "reply": "",
+                "extensions": extensions,
+                "error": None,
             }
             self._persist_job(job_id, running_doc)
         else:
@@ -192,35 +187,35 @@ class IngressRunner:
                     "job_id": job_id,
                     "route_type": route.type,
                     "source": event.source,
+                    "project_id": event.project_id,
                     "external_id": event.external_id,
                     "status": "running",
-                    "metadata": ticket.metadata,
+                    "extensions": existing.get("extensions") or extensions,
+                    "error": None,
                 }
             )
             self._persist_job(job_id, existing)
+            extensions = existing.get("extensions") or extensions
 
         logger.info(
-            "Ingress 开始处理: job_id=%s source=%s external_id=%s route=%s",
+            "Ingress 开始处理: job_id=%s source=%s project_id=%s external_id=%s route=%s",
             job_id,
             event.source,
+            event.project_id,
             event.external_id,
             route.type,
         )
 
         reply = ""
-        conversation_id: str | None = None
-        confidence: dict | None = None
         error: str | None = None
         status = "finished"
 
         try:
-            default_project = self._service.projects.require(
-                self._service.projects.config_store.default_project_id()
-            )
-            reply, conversation_id, confidence = await collect_stream_text(
+            project = self._service.projects.require(event.project_id)
+            reply, _conversation_id, _confidence = await collect_stream_text(
                 self._service.chat.run_ticket_stream(
                     ticket,
-                    project=default_project,
+                    project=project,
                     ingress_job_id=job_id,
                 )
             )
@@ -230,18 +225,13 @@ class IngressRunner:
             logger.error("Ingress 任务 Agent 失败 (%s): %s", job_id, exc)
 
         outbound_payload = OutboundPayload(
-            job_id=job_id,
-            route_type=route.type,
             source=event.source,
+            project_id=event.project_id,
             external_id=event.external_id,
             status=status,
             reply=reply,
-            conversation_id=conversation_id,
+            extensions=extensions,
             error=error,
-            metadata={
-                **ticket.metadata,
-                **({"confidence": confidence} if confidence else {}),
-            },
         )
         handler = get_outbound_handler(route.outbound.method)
         outbound_result = await handler.deliver(outbound_payload, route.outbound)
@@ -256,23 +246,19 @@ class IngressRunner:
 
         result = IngressJobResult(
             job_id=job_id,
-            route_type=route.type,
-            source=event.source,
-            external_id=event.external_id,
             status=status,
+            source=event.source,
+            project_id=event.project_id,
+            external_id=event.external_id,
             reply=reply,
-            conversation_id=conversation_id,
+            extensions=extensions,
+            error=error,
             outbound_method=route.outbound.method,
             outbound_ok=outbound_result.ok,
             outbound_detail=outbound_result.detail,
-            metadata={
-                **ticket.metadata,
-                **({"confidence": confidence} if confidence else {}),
-                "outbound_response_status": outbound_result.response_status,
-                "error": error,
-            },
         )
         persisted = asdict(result)
+        persisted["route_type"] = route.type
         persisted["updated_at"] = utc_now_iso()
         self._persist_job(job_id, persisted)
         _metrics.record_ingress_job(ok=status == "finished")
