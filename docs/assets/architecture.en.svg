@@ -19,14 +19,14 @@
   <text x="72" y="114" text-anchor="middle" class="lh">Layer</text>
   <rect x="128" y="84" width="200" height="44" rx="2" fill="#fff" stroke="#cbd5e1"/>
   <text x="228" y="102" text-anchor="middle" class="t">External systems</text>
-  <text x="228" y="118" text-anchor="middle" class="s">Monitoring · ITSM · Support</text>
-  <text x="344" y="110" text-anchor="middle" class="arr">’</text>
+  <text x="228" y="118" text-anchor="middle" class="s">Monitoring &#183; ITSM &#183; Support</text>
+  <text x="344" y="110" text-anchor="middle" class="arr">&#8594;</text>
   <rect x="360" y="84" width="160" height="44" rx="2" fill="#fff" stroke="#2563eb" stroke-width="1.5"/>
   <text x="440" y="102" text-anchor="middle" class="t">Ingress</text>
-  <text x="440" y="118" text-anchor="middle" class="s">API Key · HTTP</text>
+  <text x="440" y="118" text-anchor="middle" class="s">API Key &#183; HTTP</text>
   <rect x="536" y="84" width="376" height="44" rx="2" fill="#fff" stroke="#2563eb" stroke-width="1.5"/>
   <text x="724" y="102" text-anchor="middle" class="t">Web workbench</text>
-  <text x="724" y="118" text-anchor="middle" class="s">Eng · Ops · Support · On-call</text>
+  <text x="724" y="118" text-anchor="middle" class="s">Eng &#183; Ops &#183; Support &#183; On-call</text>
   <rect x="32" y="144" width="896" height="96" fill="#fffbeb"/>
   <line x1="32" y1="240" x2="928" y2="240" stroke="#e2e8f0"/>
   <rect x="32" y="144" width="80" height="96" fill="#fef3c7"/>
@@ -39,13 +39,13 @@
   <text x="212" y="202" text-anchor="middle" class="s">Project repos</text>
   <rect x="308" y="162" width="168" height="56" rx="2" fill="#fff" stroke="#d97706" stroke-width="1.5"/>
   <text x="392" y="184" text-anchor="middle" class="t">Scheduling</text>
-  <text x="392" y="202" text-anchor="middle" class="s">Queue · ChatRun · MCP</text>
+  <text x="392" y="202" text-anchor="middle" class="s">Queue &#183; ChatRun &#183; MCP</text>
   <rect x="488" y="162" width="168" height="56" rx="2" fill="#fff" stroke="#d97706" stroke-width="1.5"/>
   <text x="572" y="184" text-anchor="middle" class="t">Multi-project</text>
-  <text x="572" y="202" text-anchor="middle" class="s">Access · agents.md</text>
+  <text x="572" y="202" text-anchor="middle" class="s">Access &#183; agents.md</text>
   <rect x="668" y="162" width="244" height="56" rx="2" fill="#fff" stroke="#d97706" stroke-width="1.5"/>
   <text x="790" y="184" text-anchor="middle" class="t">Tickets &amp; write-back</text>
-  <text x="790" y="202" text-anchor="middle" class="s">Conclusions · Webhook ITSM</text>
+  <text x="790" y="202" text-anchor="middle" class="s">Conclusions &#183; Webhook ITSM</text>
   <rect x="32" y="240" width="896" height="72" fill="#fafafa"/>
   <line x1="32" y1="312" x2="928" y2="312" stroke="#e2e8f0"/>
   <rect x="32" y="240" width="80" height="72" fill="#f1f5f9"/>
@@ -54,7 +54,7 @@
   <text x="72" y="286" text-anchor="middle" class="lh">OpenHands</text>
   <rect x="128" y="252" width="784" height="48" rx="2" fill="#fff" stroke="#111827" stroke-width="1.5"/>
   <text x="520" y="272" text-anchor="middle" class="t">Agent runtime</text>
-  <text x="520" y="288" text-anchor="middle" class="s">Read files · Reason · Tools · MCP</text>
+  <text x="520" y="288" text-anchor="middle" class="s">Read files &#183; Reason &#183; Tools &#183; MCP</text>
   <rect x="32" y="312" width="896" height="72" fill="#f0fdf4"/>
   <line x1="32" y1="384" x2="928" y2="384" stroke="#e2e8f0"/>
   <rect x="32" y="312" width="80" height="72" fill="#ecfdf5"/>
@@ -66,10 +66,10 @@
   <text x="220" y="360" text-anchor="middle" class="s">Read-only clone</text>
   <rect x="324" y="324" width="184" height="48" rx="2" fill="#fff" stroke="#16a34a" stroke-width="1.5"/>
   <text x="416" y="344" text-anchor="middle" class="t">Log MCP</text>
-  <text x="416" y="360" text-anchor="middle" class="s">ELK · Loki</text>
+  <text x="416" y="360" text-anchor="middle" class="s">ELK &#183; Loki</text>
   <rect x="520" y="324" width="184" height="48" rx="2" fill="#fff" stroke="#16a34a" stroke-width="1.5"/>
   <text x="612" y="344" text-anchor="middle" class="t">Config MCP</text>
-  <text x="612" y="360" text-anchor="middle" class="s">Apollo · Nacos</text>
+  <text x="612" y="360" text-anchor="middle" class="s">Apollo &#183; Nacos</text>
   <rect x="716" y="324" width="196" height="48" rx="2" fill="#fff" stroke="#16a34a" stroke-width="1.5"/>
   <text x="814" y="344" text-anchor="middle" class="t">agents.md</text>
   <text x="814" y="360" text-anchor="middle" class="s">Project prompts</text>
@@ -83,8 +83,8 @@
   <text x="252" y="432" text-anchor="middle" class="s">External tickets</text>
   <rect x="388" y="396" width="248" height="48" rx="2" fill="#fff" stroke="#2563eb" stroke-width="1.5"/>
   <text x="512" y="416" text-anchor="middle" class="t">Workbench UI</text>
-  <text x="512" y="432" text-anchor="middle" class="s">Thinking · Confidence</text>
+  <text x="512" y="432" text-anchor="middle" class="s">Thinking &#183; Confidence</text>
   <rect x="648" y="396" width="264" height="48" rx="2" fill="#fff" stroke="#cbd5e1"/>
   <text x="780" y="416" text-anchor="middle" class="t">Storage &amp; audit</text>
-  <text x="780" y="432" text-anchor="middle" class="s">Chats · Run records</text>
+  <text x="780" y="432" text-anchor="middle" class="s">Chats &#183; Run records</text>
 </svg>
