@@ -7,7 +7,7 @@
   ·
   <a href="CHANGELOG.en.md">Changelog</a>
   ·
-  <a href="https://github.com/shanananana/deepticket/releases/tag/v0.5.0">v0.5.0</a>
+  <a href="https://github.com/shanananana/deepticket/releases/tag/v0.5.1">v0.5.1</a>
   ·
   <a href="LICENSE">MIT</a>
 </p>
@@ -241,7 +241,7 @@ Multi-project, MCP, Ingress, and <code>agents.md</code> are configurable in the 
 
 ## Current status
 
-DeepTicket is in **Alpha (v0.5.0)**. Core flows cover project management, Git knowledge base, Skill / MCP, OpenHands Agent, workbench chat, Ingress async analysis, Webhook write-back, and run observability.
+DeepTicket is in **Alpha (v0.5.1)**. Core flows cover project management, Git knowledge base, Skill / MCP, OpenHands Agent, workbench chat, Ingress async analysis, Webhook write-back, and run observability.
 
 > **Java edition (planned):** A Java/Spring-based implementation is on the roadmap for teams that prefer JVM stacks and on-prem Maven/Nexus workflows. It will align with the same Ingress contract and project model; watch this repo for updates.
 

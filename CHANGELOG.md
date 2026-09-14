@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.5.1] - 2026-09-14
+
 ### Changed
 
 - **README 默认英文**：GitHub 首页 `README.md` 改为英文；中文说明迁至 `README.zh.md`；`README.en.md` 保留跳转说明
@@ -235,9 +239,10 @@
 
 - [English Changelog](CHANGELOG.en.md)
 - [GitHub Releases](https://github.com/shanananana/deepticket/releases)
-- [Unreleased 对比 v0.5.0](https://github.com/shanananana/deepticket/compare/v0.5.0...HEAD)
+- [Unreleased 对比 v0.5.1](https://github.com/shanananana/deepticket/compare/v0.5.1...HEAD)
 
-[Unreleased]: https://github.com/shanananana/deepticket/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/shanananana/deepticket/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/shanananana/deepticket/releases/tag/v0.5.1
 [0.5.0]: https://github.com/shanananana/deepticket/releases/tag/v0.5.0
 [0.4.0]: https://github.com/shanananana/deepticket/releases/tag/v0.4.0
 [0.3.3]: https://github.com/shanananana/deepticket/releases/tag/v0.3.3

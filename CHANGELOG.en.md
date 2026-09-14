@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+---
+
+## [0.5.1] - 2026-09-14
+
 ### Changed
 
 - **English-first README**: default `README.md` is English; Chinese docs in `README.zh.md`; `README.en.md` is a redirect stub
@@ -234,9 +238,10 @@ First public **Alpha** release.
 
 - [中文更新日志](CHANGELOG.md)
 - [GitHub Releases](https://github.com/shanananana/deepticket/releases)
-- [Unreleased vs v0.5.0](https://github.com/shanananana/deepticket/compare/v0.5.0...HEAD)
+- [Unreleased vs v0.5.1](https://github.com/shanananana/deepticket/compare/v0.5.1...HEAD)
 
-[Unreleased]: https://github.com/shanananana/deepticket/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/shanananana/deepticket/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/shanananana/deepticket/releases/tag/v0.5.1
 [0.5.0]: https://github.com/shanananana/deepticket/releases/tag/v0.5.0
 [0.4.0]: https://github.com/shanananana/deepticket/releases/tag/v0.4.0
 [0.3.3]: https://github.com/shanananana/deepticket/releases/tag/v0.3.3
