@@ -216,7 +216,7 @@ bash scripts/verify.sh              # local self-check
 ## Architecture
 
 <p align="center">
-  <a href="docs/assets/architecture.svg"><img src="docs/assets/architecture.png" width="720" alt="DeepTicket five-layer architecture"></a>
+  <a href="docs/assets/architecture.en.svg"><img src="docs/assets/architecture.en.png" width="720" alt="DeepTicket five-layer architecture"></a>
 </p>
 
 DeepTicket is split into input, knowledge, engine, output, and storage layers: input handles chat and Ingress; knowledge handles Git / Skill / MCP; OpenHands runs analysis; output handles streaming UI and Webhook write-back; storage holds chats, project config, and run records.

@@ -218,6 +218,7 @@ bash scripts/verify.sh              # 本地自检
 <p align="center">
   <a href="docs/assets/architecture.svg"><img src="docs/assets/architecture.png" width="720" alt="DeepTicket 五层架构"></a>
 </p>
+<p align="center"><sub>English diagram: <a href="docs/assets/architecture.en.svg">architecture.en.svg</a></sub></p>
 
 DeepTicket 将系统拆成输入、知识、引擎、输出和存储等层：输入负责聊天与 Ingress，知识层负责 Git / Skill / MCP，上层由 OpenHands 执行分析，输出层负责流式展示与 Webhook 回写，存储层负责对话、项目配置和运行记录。
 

@@ -8,8 +8,10 @@
 | `logo.svg` | Vector logo (legacy) |
 | `banner.png` | README header banner |
 | `banner.svg` | Vector banner (legacy) |
-| `architecture.svg` | Architecture diagram (vector source, five-layer scheme A) |
-| `architecture.png` | README preview image (click-through to SVG) |
+| `architecture.svg` | Architecture diagram — Chinese (vector source) |
+| `architecture.png` | Chinese README preview (click-through to SVG) |
+| `architecture.en.svg` | Architecture diagram — English (vector source) |
+| `architecture.en.png` | English README preview (click-through to SVG) |
 | `demo-flow.svg` | Static demo flow (fallback diagram) |
 | `演示视频.mp4` | 仓库内源文件（~55s, 1280×642）；README 用 GitHub 图床播放 |
 | `demo-poster.jpg` | 可选封面帧（更新图床视频后可用 ffmpeg 重导） |
