@@ -36,6 +36,7 @@ data/
 .vscode/
 .cursor/
 .agents/
+AGENTS.md
 node_modules/
 docs/_local/
 docs/LOCAL-BACKLOG.md

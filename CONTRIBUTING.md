@@ -45,7 +45,7 @@ ruff check deepticket tests
 - [ ] `pytest -q` 通过
 - [ ] `ruff check deepticket tests` 无新增问题
 - [ ] 未提交 `deepticket.yaml`、`.env`、`workspace/`、`data/` 等 gitignore 内容
-- [ ] 文档改动同步 **中文 README.md** 与 **README.en.md**（若面向用户）
+- [ ] 文档改动同步 **README.md**（英文，默认）与 **README.zh.md**（中文，若面向用户）
 - [ ] PR 描述说明 **为什么改**（业务场景），而非只列文件
 
 ---

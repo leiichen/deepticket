@@ -1,11 +1,11 @@
 <p align="center">
-  <img src="docs/assets/banner-header.png" width="100%" alt="DeepTicket 品牌 Banner">
+  <img src="docs/assets/banner-header.png" width="100%" alt="DeepTicket brand banner">
 </p>
 
 <p align="center">
-  <a href="README.en.md">English</a>
+  <a href="README.zh.md">中文</a>
   ·
-  <a href="CHANGELOG.md">更新日志</a>
+  <a href="CHANGELOG.en.md">Changelog</a>
   ·
   <a href="https://github.com/shanananana/deepticket/releases/tag/v0.5.0">v0.5.0</a>
   ·
@@ -21,162 +21,164 @@
 
 <h1 align="center">DeepTicket</h1>
 
-<p align="center"><strong>连接内部系统的 AI 排障工作台。</strong></p>
+<p align="center"><strong>An AI triage workbench that connects to your internal systems.</strong></p>
 
-<p align="center"><strong>从一张工单出发，联动代码、日志与配置，完成第一轮排查。</strong></p>
+<p align="center"><strong>Start from a ticket, pull code, logs, and config together, and finish the first round of investigation.</strong></p>
 
-<p align="center">它把内部系统中的事件送进 Agent，将项目源码、日志、配置和内部工具接到同一次分析里，再把带证据的结论回写原系统。</p>
+<p align="center">It routes events from internal systems into an Agent, wires project source, logs, config, and internal tools into one analysis, then writes evidence-backed conclusions back to the source system.</p>
 
 <p align="center">
-  <a href="#它是什么"><strong>它是什么</strong></a>
+  <a href="#what-it-is"><strong>What it is</strong></a>
   ·
-  <a href="#演示"><strong>演示</strong></a>
+  <a href="#demo"><strong>Demo</strong></a>
   ·
-  <a href="#核心能力"><strong>核心能力</strong></a>
+  <a href="#core-capabilities"><strong>Core capabilities</strong></a>
   ·
-  <a href="#5-分钟跑起来"><strong>5 分钟上手</strong></a>
+  <a href="#get-started-in-5-minutes"><strong>Get started</strong></a>
   ·
-  <a href="#架构"><strong>架构</strong></a>
+  <a href="#architecture"><strong>Architecture</strong></a>
   ·
-  <a href="#文档"><strong>文档</strong></a>
+  <a href="#docs"><strong>Docs</strong></a>
+  ·
+  <a href="#internal-deployment-pitfalls"><strong>Deploy pitfalls</strong></a>
 </p>
 
 ---
 
-## 它是什么
+## What it is
 
-DeepTicket 是一层部署在团队自己环境里的 **AI 工单排障与 Agent 编排平台**。
+DeepTicket is a **self-hosted AI ticket triage and Agent orchestration platform** deployed in your own environment.
 
-它提供统一的 HTTP Ingress API 和可配置 Webhook：内部工单、告警、监控平台或自研系统，只要能够发送或接收 HTTP 请求，就可以按统一事件格式接入。DeepTicket 当前提供的是通用接入能力，不内置某个具体厂商的专用适配器。
+It exposes a unified HTTP Ingress API and configurable Webhooks: internal ticketing, alerting, monitoring, or custom systems can integrate using a common event format as long as they can send or receive HTTP requests. DeepTicket provides generic integration capabilities—it does not ship vendor-specific adapters out of the box.
 
-进入 DeepTicket 的工单会按项目路由到对应的 Git 仓库、日志查询 Skill、配置中心 MCP 和其他内部工具。OpenHands Agent 完成多轮分析后，DeepTicket 将摘要、证据、影响面、根因假设和建议通过 Webhook 写回原工单系统，也可以选择只存储、不回调。
+Tickets routed into DeepTicket are mapped to the right Git repos, log-query Skills, config-center MCPs, and other internal tools per project. After OpenHands completes multi-turn analysis, DeepTicket can write summaries, evidence, impact, root-cause hypotheses, and recommendations back via Webhook—or store results only without callback.
 
-一句话概括：**DeepTicket 让内部工单从“人工转述问题”，变成“自动带着项目上下文完成第一轮排查”。**
+In one line: **DeepTicket turns internal tickets from “someone re-describes the problem” into “automated first-pass triage with full project context.”**
 
 ---
 
-## 演示
+## Demo
 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/3bc7b913-f3a9-49c5-bbe7-1c15f1a0381b" width="720" controls autoplay muted loop playsinline></video>
 </p>
-<p align="center"><sub>ad-agent ROI 归因 Demo · 查日志等能力需接入真实 Skill / MCP 后生效；部分 UI 为演示强化，与实际项目样式可能不同</sub></p>
+<p align="center"><sub>ad-agent ROI attribution demo · log lookup and similar capabilities require real Skill / MCP wiring · some UI is enhanced for demo and may differ from your deployment</sub></p>
 
 ---
 
-## 为什么是 DeepTicket
+## Why DeepTicket
 
-很多问题并不需要立刻叫研发，却也不是一句“建议检查日志”就能结束。
+Many issues do not need engineering immediately—but they also cannot be closed with “please check the logs.”
 
-DeepTicket 把问题分析所需的上下文放到同一个工作台里：项目源码、运行日志、配置项、内部工具和原始工单。客服、运营、产品与研发可以围绕同一份上下文协作。Agent 先读取事实，再给出问题原因、影响范围和处理建议。
+DeepTicket puts everything needed for analysis in one workbench: project source, runtime logs, config, internal tools, and the original ticket. Support, ops, product, and engineering can collaborate on the same context. The Agent reads facts first, then explains cause, impact, and suggested next steps.
 
-> **从“问一个 AI”到“完成一次排查”。**
+> **From “ask an AI” to “complete an investigation.”**
 >
-> 重点不是让对话更长，而是让每个结论都更接近证据。
+> The goal is not longer chat—it is conclusions backed by evidence.
 
-### 它适合谁
+### Who it is for
 
-- 希望由业务团队自己部署、自己接入内网数据的团队
-- 需要让产品、运营、QA 或值班同学先完成一轮事实核查的团队
-- 已经有 Git、日志平台、配置中心或 ITSM，但缺少统一 Agent 入口的团队
+- Teams that want business units to deploy and wire internal data themselves
+- Teams that need product, ops, QA, or on-call to run a first factual check before escalation
+- Teams that already have Git, log platforms, config centers, or ITSM but lack a unified Agent entry point
 
-### 它不是什么
+### What it is not
 
-DeepTicket 不是公司级 Copilot 的替代品，也不是把所有文档灌进向量库的纯 RAG。它更像一层面向具体项目的“排查与回写编排”：接入真实工具，限定项目边界，让 Agent 对着可验证的上下文工作。
-
----
-
-## 核心能力
-
-### 01 · 接入真实上下文
-
-- **Git 知识库同步**：将一个或多个项目仓库同步到 Agent workspace，支持源码、文档和配置一起检索
-- **日志与配置查询**：通过内置 Skill 模板或 MCP 接入已有平台，不要求先改造数据链路
-- **多项目隔离**：每个项目拥有独立的 repos、MCP、Skill、<code>agents.md</code> 和成员配置
-
-### 02 · 让结论有依据
-
-- **证据优先**：回答可引用源码路径、日志片段、配置键和相关文件
-- **权限隔离**：Git 与内部系统使用只开放 Read / Read API 的 Access Token，从接入层限制 Agent 的访问范围；<code>agents.md</code> 负责补充分析规范、证据引用和不确定性说明
-- **过程可见**：工作台展示 Agent 的分析步骤、流式回复、置信度和历史对话
-- **不确定就标注**：没有足够证据时明确说明缺失信息，而不是用通用话术填空
-
-### 03 · 从入口到回写闭环
-
-- **Ingress**：通过 HTTP API / Webhook 接入任意内部工单、ITSM、告警或自研系统
-- **异步分析**：后台队列执行 Agent 任务，不依赖调用方一直保持连接
-- **Webhook 回写**：把分析结论写回原工单系统，也可以只存储、不回调
-- **人机协作**：机器先完成事实整理，人结合业务判断原因、影响范围和处理方式
-
-### 04 · 方便试点，也方便治理
-
-- **Docker 一键启动**：Web、OpenHands Agent Server 与 Redis 可用 Compose 启动
-- **YAML + 管理侧栏**：配置既可版本管理，也可在运行时由管理员调整
-- **Token 与运行观测**：查看 Agent 用量、运行状态、Ingress 队列和 Webhook 成功失败
-- **自托管**：数据、模型配置和项目接入关系留在自己的环境中
+DeepTicket is not a replacement for company-wide Copilot, nor a pure RAG stack that ingests all docs into a vector store. It is a **project-scoped triage and write-back orchestration layer**: hook real tools, bound by project, and make the Agent work against verifiable context.
 
 ---
 
-## 一次排查是怎样完成的
+## Core capabilities
+
+### 01 · Connect real context
+
+- **Git knowledge sync**: sync one or more repos into the Agent workspace; source, docs, and config searchable together
+- **Logs and config lookup**: built-in Skill templates or MCP to existing platforms—no data pipeline rewrite required
+- **Multi-project isolation**: per-project repos, MCP, Skills, <code>agents.md</code>, and membership
+
+### 02 · Ground conclusions in evidence
+
+- **Evidence first**: answers cite source paths, log snippets, config keys, and related files
+- **Scoped access**: Git and internal systems use read-only tokens; <code>agents.md</code> adds analysis rules, citation, and uncertainty handling
+- **Visible process**: workbench shows Agent steps, streaming replies, confidence, and chat history
+- **Say when unsure**: missing evidence is stated explicitly—not filled with generic advice
+
+### 03 · From ingress to write-back
+
+- **Ingress**: HTTP API / Webhook for any internal ticket, ITSM, alert, or custom system
+- **Async analysis**: background queue runs Agent jobs; callers need not hold a connection
+- **Webhook write-back**: push conclusions to the source ticket system, or store only
+- **Human in the loop**: machine gathers facts; people judge cause, impact, and action
+
+### 04 · Easy to pilot, easy to govern
+
+- **Docker one-liner**: Web, OpenHands Agent Server, and Redis via Compose
+- **YAML + admin sidebar**: versioned config and runtime admin edits
+- **Token and run observability**: Agent usage, run status, Ingress queue, Webhook success/failure
+- **Self-hosted**: data, model config, and project wiring stay in your environment
+
+---
+
+## How an investigation runs
 
 ~~~text
-工单 / 告警 / 用户提问
+Ticket / alert / user question
           ↓
        Ingress
           ↓
-按项目路由：Git + 日志 + 配置 + MCP / Skill
+Route by project: Git + logs + config + MCP / Skill
           ↓
-OpenHands Agent 多轮分析
+OpenHands Agent multi-turn analysis
           ↓
-带证据的结论：摘要 · 根因假设 · 影响面 · 建议
+Evidence-backed output: summary · hypothesis · impact · recommendations
           ↓
-工作台查看 / 人工确认 / Webhook 回写
+Workbench review / human confirm / Webhook write-back
 ~~~
 
-### 和纯 RAG、公司 Copilot 的区别
+### vs pure RAG and company Copilot
 
-| 能力 | 纯 RAG | 公司级 Copilot | DeepTicket |
+| Capability | Pure RAG | Company Copilot | DeepTicket |
 |---|:---:|:---:|:---:|
-| 读取项目源码 | 文档片段 | 视平台而定 | ✅ Git workspace |
-| 查询内网日志 / 配置 | 需要先灌库 | 通常较粗 | ✅ MCP / Skill |
-| 多项目隔离 | 通常有限 | 平台统一管理 | ✅ 项目级配置 |
-| 接收工单 / 告警 | ❌ | 视集成而定 | ✅ HTTP API / Webhook |
-| 结论写回原系统 | ❌ | 视集成而定 | ✅ Webhook |
-| 业务团队自托管 | 视方案而定 | 通常不支持 | ✅ Docker / YAML |
+| Read project source | Doc chunks | Varies | ✅ Git workspace |
+| Internal logs / config | Ingest first | Often coarse | ✅ MCP / Skill |
+| Multi-project isolation | Limited | Central platform | ✅ Per-project config |
+| Ingest tickets / alerts | ❌ | Varies | ✅ HTTP API / Webhook |
+| Write back to source system | ❌ | Varies | ✅ Webhook |
+| Business team self-host | Varies | Usually no | ✅ Docker / YAML |
 
-**和 OpenHands 的关系：** OpenHands 负责 Agent 执行；DeepTicket 负责工作台、项目配置、知识库同步、Ingress 和结果回写。
-
----
-
-## 典型场景
-
-### 产品 / 运营 / QA：先判断是不是 Bug
-
-把日志和配置查询接好后，客服、运营、产品等角色可以直接问：
-
-> “这个现象和需求一致吗？”
->
-> “线上配置为什么和文档不一致？”
->
-> “这是数据问题、配置问题，还是代码问题？”
-
-回答带上日志、配置项和代码位置，帮助不同角色共同判断问题原因，并决定后续的处理方式。
-
-### 值班与告警：先整理，再决定是否叫人
-
-任意支持 HTTP 的工单或告警系统都可以推送事件，DeepTicket 在后台完成关联项目、读取代码与配置、整理影响面，并通过 Webhook 将结果回写原系统。值班同学看到的是一份可审阅的分析草稿，而不是一条孤立的错误消息。
-
-### 报表与指标：把跨系统关联交给 Agent
-
-接入报表或 BI MCP 后，可以分析活动 ROI、日报与投放日志之间的不一致。垂类示例见 [ad_agent](https://github.com/shanananana/ad_agent)；DeepTicket 本身负责项目隔离、工具接入和编排，不绑定具体业务领域。
+**Relationship to OpenHands:** OpenHands runs the Agent; DeepTicket provides the workbench, project config, knowledge sync, Ingress, and write-back.
 
 ---
 
-## 5 分钟跑起来
+## Typical scenarios
 
-### 方式一：拉取预构建镜像（推荐）
+### Product / ops / QA: is this a bug?
 
-前提：已安装 Docker Desktop 或 Docker Engine + Compose v2。
+After wiring logs and config, support, ops, and product can ask directly:
+
+> “Does this behavior match the requirement?”
+>
+> “Why does prod config differ from the doc?”
+>
+> “Data issue, config issue, or code issue?”
+
+Answers include logs, config keys, and code locations so teams can decide next steps together.
+
+### On-call and alerts: triage before paging
+
+Any HTTP-capable ticket or alert system can push events. DeepTicket correlates the project, reads code and config, summarizes impact, and writes back via Webhook. On-call gets a reviewable draft—not an isolated error line.
+
+### Reports and metrics: cross-system reasoning
+
+With a reporting or BI MCP, analyze mismatches between campaign ROI, daily reports, and delivery logs. Vertical example: [ad_agent](https://github.com/shanananana/ad_agent); DeepTicket handles isolation, tooling, and orchestration—not a fixed domain.
+
+---
+
+## Get started in 5 minutes
+
+### Option 1: Pre-built image (recommended)
+
+Prerequisites: Docker Desktop or Docker Engine + Compose v2.
 
 ~~~bash
 mkdir deepticket && cd deepticket
@@ -186,11 +188,11 @@ cp .env.docker.example .env
 docker compose -f docker-compose.image.yml up -d
 ~~~
 
-打开 **http://127.0.0.1:8600**，使用默认账户 <code>admin / admin</code> 登录。LLM Key 可以提前写入 <code>.env</code>，也可以登录后在侧栏 **LLM 配置** 中填写。
+Open **http://127.0.0.1:8600** and sign in with <code>admin / admin</code>. Set your LLM key in <code>.env</code> before start, or in the sidebar **LLM settings** after login.
 
-> ⚠️ 默认账号仅用于本地体验。部署到内网或生产环境前，请立即修改密码、配置鉴权和持久化策略。
+> ⚠️ Default credentials are for local trial only. Change password, auth, and persistence before internal or production deployment.
 
-### 方式二：Clone 后启动（适合开发调试）
+### Option 2: Clone and run (development)
 
 ~~~bash
 git clone https://github.com/shanananana/deepticket.git
@@ -199,48 +201,68 @@ bash scripts/setup.sh
 bash scripts/start_all.sh
 ~~~
 
-第一次体验可以直接复制 [DEMO_PROMPT.md](docs/DEMO_PROMPT.md) 中的 Nginx 日志提问；想看“日志 → 配置 / 代码 → ROI 结论”的完整流程，参考 [5 分钟上手 & ROI 演示](docs/quickstart-demo.md)。
+Copy the Nginx log prompt from [DEMO_PROMPT.md](docs/DEMO_PROMPT.md) for a first chat; for the full “logs → config / code → ROI” flow see [Quick start & ROI demo](docs/quickstart-demo.md).
 
-常用命令：
+Common commands:
 
 ~~~bash
-docker compose logs -f deepticket  # 查看日志
-docker compose down                 # 停止服务
-bash scripts/verify.sh              # 本地自检
+docker compose logs -f deepticket  # tail logs
+docker compose down                 # stop
+bash scripts/verify.sh              # local self-check
 ~~~
 
 ---
 
-## 架构
+## Architecture
 
 <p align="center">
-  <a href="docs/assets/architecture.svg"><img src="docs/assets/architecture.png" width="720" alt="DeepTicket 五层架构"></a>
+  <a href="docs/assets/architecture.svg"><img src="docs/assets/architecture.png" width="720" alt="DeepTicket five-layer architecture"></a>
 </p>
 
-DeepTicket 将系统拆成输入、知识、引擎、输出和存储等层：输入负责聊天与 Ingress，知识层负责 Git / Skill / MCP，上层由 OpenHands 执行分析，输出层负责流式展示与 Webhook 回写，存储层负责对话、项目配置和运行记录。
+DeepTicket is split into input, knowledge, engine, output, and storage layers: input handles chat and Ingress; knowledge handles Git / Skill / MCP; OpenHands runs analysis; output handles streaming UI and Webhook write-back; storage holds chats, project config, and run records.
 
 ---
 
-## 文档
+## Docs
 
-| 文档 | 适合什么时候看 |
+| Doc | When to read |
 |---|---|
-| [docs/docker.md](docs/docker.md) | Docker 部署、GHCR 镜像、数据卷和内网试点 |
-| [docs/quickstart-demo.md](docs/quickstart-demo.md) | 从零体验 Demo 与 ROI 场景 |
-| [docs/DEMO_PROMPT.md](docs/DEMO_PROMPT.md) | 复制即用的 Nginx / ROI 示例提问 |
-| [deepticket.example.yaml](deepticket.example.yaml) | 查看完整配置项和接入示例 |
-| [deepticket/skills/README.md](deepticket/skills/README.md) | 编写与挂载项目 Skill |
-| [CONTRIBUTING.md](CONTRIBUTING.md) | 本地开发、测试与贡献指南 |
-| [CHANGELOG.md](CHANGELOG.md) | 版本变化与已知能力边界 |
+| [docs/docker.md](docs/docker.md) | Docker deploy, GHCR image, volumes, internal pilot |
+| [docs/quickstart-demo.md](docs/quickstart-demo.md) | Demo and ROI walkthrough from scratch |
+| [docs/DEMO_PROMPT.md](docs/DEMO_PROMPT.md) | Copy-paste Nginx / ROI sample prompts |
+| [deepticket.example.yaml](deepticket.example.yaml) | Full config and integration examples |
+| [deepticket/skills/README.md](deepticket/skills/README.md) | Authoring and mounting project Skills |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Local dev, tests, contributing |
+| [CHANGELOG.en.md](CHANGELOG.en.md) | Release notes and known limits |
 
-多项目、MCP、Ingress 和 <code>agents.md</code> 都可以在工作台侧栏配置，也可以通过管理员 API 管理：<code>/api/admin/projects/{id}</code>。
+Multi-project, MCP, Ingress, and <code>agents.md</code> are configurable in the workbench sidebar or via admin API <code>/api/admin/projects/{id}</code>.
 
 ---
 
-## 当前状态
+## Current status
 
-DeepTicket 当前处于 **Alpha（v0.5.0）**。核心链路已经覆盖：项目管理、Git 知识库、Skill / MCP、OpenHands Agent、工作台对话、Ingress 异步分析、Webhook 回写和运行观测。
+DeepTicket is in **Alpha (v0.5.0)**. Core flows cover project management, Git knowledge base, Skill / MCP, OpenHands Agent, workbench chat, Ingress async analysis, Webhook write-back, and run observability.
 
-如果这个方向对你有帮助，欢迎 [Star](https://github.com/shanananana/deepticket)、提交 [Issue](https://github.com/shanananana/deepticket/issues)，或分享你的接入场景。
+> **Java edition (planned):** A Java/Spring-based implementation is on the roadmap for teams that prefer JVM stacks and on-prem Maven/Nexus workflows. It will align with the same Ingress contract and project model; watch this repo for updates.
+
+If this direction helps you, please [Star](https://github.com/shanananana/deepticket), open an [Issue](https://github.com/shanananana/deepticket/issues), or share your integration story.
+
+---
+
+## Internal deployment pitfalls
+
+Notes from real on-prem deployments—for teams whose primary stack is Java / Go / ops rather than Python packaging.
+
+### 1. Missing wheels on internal PyPI can stretch builds to hours
+
+If your internal PyPI or artifact mirror does not mirror the full OpenHands dependency chain with prebuilt wheels for your target platform, `pip` may fall back to source builds. Some native dependencies need C/C++ and Rust toolchains; downloading and compiling on a packaging host behind a restricted network can take hours or fail.
+
+**Mitigation:** on a build host that matches production, prefetch and validate the full wheel set into your artifact mirror; install wheels only in production builds. Mirroring this project's pre-built Docker image to an internal registry avoids most of this pain. See [docs/docker.md](docs/docker.md).
+
+### 2. CentOS 7 glibc is too old
+
+CentOS 7 ships glibc 2.17. If a binary wheel in the OpenHands chain requires `GLIBC_2.28` or newer, install or runtime fails—extra Python packages will not fix it.
+
+Do not use CentOS 7 as build or runtime base; prefer Rocky Linux 9 or similar, or use this project's Debian Bookworm-based image (`python:3.12-slim-bookworm` in the Dockerfile). Use the exact package name from the error log when debugging.
 
 <p align="center"><sub>DeepTicket · Evidence before escalation · MIT License</sub></p>
