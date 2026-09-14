@@ -239,7 +239,7 @@ Multi-project, MCP, Ingress, and <code>agents.md</code> are configurable in the 
 
 ## Current status
 
-DeepTicket is in **Alpha (v0.3.3)**. Core flows cover project management, Git knowledge base, Skill / MCP, OpenHands Agent, workbench chat, Ingress async analysis, Webhook write-back, and run observability.
+DeepTicket is in **Alpha (v0.5.0)**. Core flows cover project management, Git knowledge base, Skill / MCP, OpenHands Agent, workbench chat, Ingress async analysis, Webhook write-back, and run observability.
 
 If this direction helps you, please [Star](https://github.com/shanananana/deepticket), open an [Issue](https://github.com/shanananana/deepticket/issues), or share your integration story.
 
