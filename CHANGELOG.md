@@ -8,6 +8,12 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **README 默认英文**：GitHub 首页 `README.md` 改为英文；中文说明迁至 `README.zh.md`；`README.en.md` 保留跳转说明
+- **内网部署踩坑实录**：README 补充 wheel 缺失导致长时间源码构建、glibc 版本（CentOS 7 vs Rocky 9 / Bookworm 镜像）等说明
+- **Java 版本（计划中）**：在「当前状态」说明 Spring/Java 实现路线图
+
 ---
 
 ## [0.5.0] - 2026-09-14
