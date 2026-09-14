@@ -8,6 +8,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- **English-first README**: default `README.md` is English; Chinese docs in `README.zh.md`; `README.en.md` is a redirect stub
+- **Internal deployment pitfalls**: wheel mirror / source-build delays, glibc on CentOS 7 vs Rocky 9 / Bookworm image
+- **Java edition (planned)**: roadmap note in Current status
+
 ---
 
 ## [0.5.0] - 2026-09-14
