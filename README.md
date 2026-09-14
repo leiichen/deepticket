@@ -7,7 +7,7 @@
   ·
   <a href="CHANGELOG.md">更新日志</a>
   ·
-  <a href="https://github.com/shanananana/deepticket/releases/tag/v0.4.0">v0.4.0</a>
+  <a href="https://github.com/shanananana/deepticket/releases/tag/v0.5.0">v0.5.0</a>
   ·
   <a href="LICENSE">MIT</a>
 </p>
@@ -239,7 +239,7 @@ DeepTicket 将系统拆成输入、知识、引擎、输出和存储等层：输
 
 ## 当前状态
 
-DeepTicket 当前处于 **Alpha（v0.4.0）**。核心链路已经覆盖：项目管理、Git 知识库、Skill / MCP、OpenHands Agent、工作台对话、Ingress 异步分析、Webhook 回写和运行观测。
+DeepTicket 当前处于 **Alpha（v0.5.0）**。核心链路已经覆盖：项目管理、Git 知识库、Skill / MCP、OpenHands Agent、工作台对话、Ingress 异步分析、Webhook 回写和运行观测。
 
 如果这个方向对你有帮助，欢迎 [Star](https://github.com/shanananana/deepticket)、提交 [Issue](https://github.com/shanananana/deepticket/issues)，或分享你的接入场景。
 

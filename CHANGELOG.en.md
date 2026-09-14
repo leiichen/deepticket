@@ -8,6 +8,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] - 2026-09-14
+
 ### Changed
 
 - **Slim Ingress contract (breaking)**: `POST /api/ingress/events` now accepts `source`, `project_id`, `external_id`, `question`, optional `image_urls` and `extensions`; removed `title`, `body`, `repo_ids`, `type`, `metadata`
@@ -19,6 +23,27 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - Ingress request fields: `title`, `body`, `repo_ids`, `type`, `metadata`
 - Ingress response / Webhook fields: `route_type`, `conversation_id`, `metadata` (and Webhook `job_id`, `type`)
+
+---
+
+## [0.4.0] - 2026-08-25
+
+### Added
+
+- **InvestigationRun persistence**: Redis-backed runs, state machine (`WAITING_APPROVAL` / `BLOCKED`), chat/ingress indexes
+- **Run event stream**: `RunEventStore` timeline; `GET /api/runs/{id}/events`
+- **Tool governance (P0)**: `tool_governance` YAML policies, `ToolGovernanceGate`, `PreToolUse` hook
+- **Approval HITL**: `ApprovalRequestStore`; `POST /api/runs/{id}/approve|reject`; one-time tool grant after approval
+- **Runs API**: `GET /api/runs/{id}`, cancel, approvals; chat `/status` exposes investigation run and pending approval
+- **Demo MCP**: `fixtures/demo_mcp` for governance integration tests
+- **Frontend**: run timeline, approval UI, chat status and SSE enhancements
+
+### Changed
+
+- **ChatRunManager / ChatOrchestrator**: InvestigationRun lifecycle, governance pause, `resume_after_approval`
+- **OpenHandsEngine**: governance context, WebSocket event mapping, `PolicyApprovalRequiredError`
+- **IngressRunner**: unified run lifecycle
+- **pytest**: `pythonpath = ["."]` for `tests.helpers` imports
 
 ---
 
@@ -211,9 +236,11 @@ First public **Alpha** release.
 
 - [中文更新日志](CHANGELOG.md)
 - [GitHub Releases](https://github.com/shanananana/deepticket/releases)
-- [Unreleased vs v0.3.3](https://github.com/shanananana/deepticket/compare/v0.3.3...HEAD)
+- [Unreleased vs v0.5.0](https://github.com/shanananana/deepticket/compare/v0.5.0...HEAD)
 
-[Unreleased]: https://github.com/shanananana/deepticket/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/shanananana/deepticket/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/shanananana/deepticket/releases/tag/v0.5.0
+[0.4.0]: https://github.com/shanananana/deepticket/releases/tag/v0.4.0
 [0.3.3]: https://github.com/shanananana/deepticket/releases/tag/v0.3.3
 [0.3.2]: https://github.com/shanananana/deepticket/releases/tag/v0.3.2
 [0.3.1]: https://github.com/shanananana/deepticket/releases/tag/v0.3.1

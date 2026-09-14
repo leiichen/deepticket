@@ -8,6 +8,10 @@
 
 ## [Unreleased]
 
+---
+
+## [0.5.0] - 2026-09-14
+
 ### Changed
 
 - **Ingress 外部契约精简（破坏性变更）**：`POST /api/ingress/events` 输入改为 `source`、`project_id`、`external_id`、`question`、可选 `image_urls` 与 `extensions`；移除 `title`、`body`、`repo_ids`、`type`、`metadata`
@@ -233,9 +237,11 @@
 
 - [English Changelog](CHANGELOG.en.md)
 - [GitHub Releases](https://github.com/shanananana/deepticket/releases)
-- [Unreleased 对比 v0.3.3](https://github.com/shanananana/deepticket/compare/v0.3.3...HEAD)
+- [Unreleased 对比 v0.5.0](https://github.com/shanananana/deepticket/compare/v0.5.0...HEAD)
 
-[Unreleased]: https://github.com/shanananana/deepticket/compare/v0.3.3...HEAD
+[Unreleased]: https://github.com/shanananana/deepticket/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/shanananana/deepticket/releases/tag/v0.5.0
+[0.4.0]: https://github.com/shanananana/deepticket/releases/tag/v0.4.0
 [0.3.3]: https://github.com/shanananana/deepticket/releases/tag/v0.3.3
 [0.3.2]: https://github.com/shanananana/deepticket/releases/tag/v0.3.2
 [0.3.1]: https://github.com/shanananana/deepticket/releases/tag/v0.3.1

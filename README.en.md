@@ -7,7 +7,7 @@
   ·
   <a href="CHANGELOG.en.md">Changelog</a>
   ·
-  <a href="https://github.com/shanananana/deepticket/releases/tag/v0.3.3">v0.3.3</a>
+  <a href="https://github.com/shanananana/deepticket/releases/tag/v0.5.0">v0.5.0</a>
   ·
   <a href="LICENSE">MIT</a>
 </p>
