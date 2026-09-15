@@ -1,3 +1,5 @@
+"""所有配置项的 Pydantic 数据模型（对应 deepticket.yaml 的各顶层节点）。"""
+
 from __future__ import annotations
 
 from typing import Any, Literal

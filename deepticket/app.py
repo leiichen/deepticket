@@ -1,4 +1,8 @@
-"""DeepTicket Agent 服务入口。"""
+"""DeepTicket Agent 服务入口。
+
+启动方式：python -m deepticket 或 .venv/bin/deepticket
+调用链：main() → load_app_config() → uvicorn.run("deepticket.app:app")
+"""
 
 from __future__ import annotations
 

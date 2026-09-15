@@ -1,4 +1,10 @@
+"""DeepTicket 核心服务编排层（五层架构的组装与生命周期管理）。
 
+DeepTicketService 在 __init__ 中组装所有子系统：
+    storage（Redis/Local） → users / chat_history → investigation（Run/治理/审批）
+    → projects → knowledge（Git） → skills → engine（OpenHands）
+    → routing → ingress → chat → chat_runs
+"""
 from __future__ import annotations
 
 import logging
@@ -52,12 +58,14 @@ class DeepTicketService:
         llm_base_url: str,
         llm_label: str,
     ) -> None:
+        """组装所有子系统组件（依赖注入的根节点）。"""
         self.config = config
         self.llm_label = llm_label
+        # 存储层：根据配置选择 Redis 或本地 JSON 文件
         self.storage: StorageBackend = create_storage(config.storage)
         self.users = UserStore(self.storage)
         self.chat_history = ChatHistoryStore(self.storage)
-        # --- Investigation Run 子系统（P0 调查任务 + 治理）---
+        # Investigation Run：调查任务生命周期 + MCP 工具治理 + 审批
         self.investigation_runs = InvestigationRunStore(self.storage)
         self.run_events = RunEventStore(self.storage, run_store=self.investigation_runs)
         self.approval_requests = ApprovalRequestStore(self.storage)

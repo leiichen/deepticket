@@ -1,3 +1,5 @@
+"""Ingress 事件分类器：根据 source / 关键词匹配路由规则。"""
+
 from __future__ import annotations
 
 from deepticket.config.routing_schema import RouteConfig, RoutingConfig

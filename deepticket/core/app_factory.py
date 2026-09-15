@@ -1,3 +1,5 @@
+"""FastAPI 应用工厂：路由注册、CORS、静态文件、lifespan 生命周期管理。"""
+
 from __future__ import annotations
 
 import logging
@@ -44,6 +46,7 @@ def _configure_logging() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """应用生命周期：启动时构建服务并注入 state，关闭时停止 Ingress worker。"""
     config = load_runtime_config()
     llm = load_llm_config(config)
     service = build_service(config, llm)
@@ -62,6 +65,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    """创建并返回配置完整的 FastAPI 应用实例。"""
     _configure_logging()
     app = FastAPI(
         title="DeepTicket",

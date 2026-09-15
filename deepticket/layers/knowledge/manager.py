@@ -1,3 +1,5 @@
+"""知识层管理：从 Git 拉取只读代码到 cache，再链接到 Agent workspace。"""
+
 from __future__ import annotations
 
 import logging
@@ -24,7 +26,11 @@ class GitSyncResult:
 
 
 class KnowledgeManager:
-    """知识层：从 Git 拉取只读代码到 cache，再链接到 workspace。"""
+    """知识层：从 Git 拉取只读代码到 cache，再链接到 workspace。
+
+    sync_all() 流程：对每个 repo 注入 token → git clone/pull → 设为只读
+    → 链接/复制到 workspace/project/{subdir}/ 供 Agent 检索。
+    """
 
     def __init__(self, config: KnowledgeConfig) -> None:
         self.config = config
