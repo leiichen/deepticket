@@ -13,7 +13,7 @@ from deepticket.config.loader import load_app_config
 from deepticket.config.redis_url import resolve_redis_url
 from deepticket.paths import PROJECT_ROOT
 
-c = load_app_config(PROJECT_ROOT)
+c = load_app_config(dotenv_root=PROJECT_ROOT)
 redis_url = resolve_redis_url(
     c.storage.redis.url,
     username=c.storage.redis.username,
