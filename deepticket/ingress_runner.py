@@ -122,12 +122,15 @@ class IngressRunner:
         await self.run_event(item.event, job_id=item.job_id)
 
     async def submit(self, event: IngressEvent) -> IngressJobResult:
-        self._service.require_llm_configured()
-        self._service.projects.require(event.project_id)
-        route = classify_ingress_event(event, self._service.routing)
+        # 入队前先校验 Agent 可用性和项目存在性，避免生成注定失败的任务。
+        self._service.require_llm_configured()  # LLM 必须已配置
+        self._service.projects.require(event.project_id)  # 项目必须存在
+        route = classify_ingress_event(event, self._service.routing)  # 匹配路由规则
+        # 快照扩展字段，避免后续处理修改入参对象。
         extensions = _snapshot_extensions(event.extensions)
-        job_id = uuid.uuid4().hex
+        job_id = uuid.uuid4().hex  # 生成唯一任务 ID
 
+        # queued 文档先持久化，任务由 asyncio worker 异步消费执行。
         queued_doc = {
             "job_id": job_id,
             "route_type": route.type,
@@ -138,12 +141,13 @@ class IngressRunner:
             "reply": "",
             "extensions": extensions,
             "error": None,
-            "outbound_method": route.outbound.method,
+            "outbound_method": route.outbound.method,  # store_only 或 webhook
             "outbound_ok": False,
             "outbound_detail": "已入队，等待处理",
             "updated_at": utc_now_iso(),
         }
-        self._persist_job(job_id, queued_doc)
+        self._persist_job(job_id, queued_doc)  # 写入存储 + 索引
+        # 放入异步队列，worker 会调用 run_event()
         await self._queue.enqueue(IngressQueueItem(job_id=job_id, event=event))
         logger.info(
             "Ingress 任务入队: job_id=%s source=%s project_id=%s external_id=%s route=%s queue=%s",
@@ -164,7 +168,8 @@ class IngressRunner:
         job_id: str | None = None,
     ) -> IngressJobResult:
         route = classify_ingress_event(event, self._service.routing)
-        ticket = IngressAdapter.to_ticket(event, route)
+        # IngressEvent → TicketInput。
+        ticket = IngressAdapter.to_ticket(event, route)  # IngressEvent → TicketInput
         extensions = _snapshot_extensions(event.extensions)
         if job_id is None:
             job_id = uuid.uuid4().hex
@@ -181,6 +186,7 @@ class IngressRunner:
             }
             self._persist_job(job_id, running_doc)
         else:
+            # 更新状态为 running。
             existing = self._service.storage.get_json(self.NAMESPACE_INGRESS, job_id) or {}
             existing.update(
                 {
@@ -211,6 +217,7 @@ class IngressRunner:
         status = "finished"
 
         try:
+            # 调用 ChatOrchestrator 工单链路，收集完整回复文本。
             project = self._service.projects.require(event.project_id)
             reply, _conversation_id, _confidence = await collect_stream_text(
                 self._service.chat.run_ticket_stream(
@@ -224,6 +231,7 @@ class IngressRunner:
             error = str(exc)
             logger.error("Ingress 任务 Agent 失败 (%s): %s", job_id, exc)
 
+        # 构建出站负载。
         outbound_payload = OutboundPayload(
             source=event.source,
             project_id=event.project_id,
@@ -233,6 +241,7 @@ class IngressRunner:
             extensions=extensions,
             error=error,
         )
+        # 根据路由配置选择出站处理器（store_only 或 webhook）并投递。
         handler = get_outbound_handler(route.outbound.method)
         outbound_result = await handler.deliver(outbound_payload, route.outbound)
         logger.info(
@@ -244,6 +253,7 @@ class IngressRunner:
             outbound_result.detail,
         )
 
+        # 持久化最终结果。
         result = IngressJobResult(
             job_id=job_id,
             status=status,

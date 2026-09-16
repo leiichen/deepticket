@@ -11,6 +11,7 @@ from deepticket.service import DeepTicketService
 
 def load_runtime_config(*, dotenv_root=PROJECT_ROOT) -> AppConfig:
     config = load_app_config(dotenv_root=dotenv_root)
+    # yaml 先建立基础配置，再允许少数部署环境变量覆盖 Agent Server 连接。
     engine = config.engine
 
     if os.environ.get("AGENT_SERVER_HOST"):

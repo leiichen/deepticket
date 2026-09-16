@@ -1,12 +1,15 @@
 from __future__ import annotations
 
 import json
+import re
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote
 
 from deepticket.layers.storage.base import StorageBackend
 
 _ZSET_MARK = "__zset__"
+_UNSAFE_FILENAME_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f%]')
 
 
 class LocalStorage(StorageBackend):
@@ -17,7 +20,9 @@ class LocalStorage(StorageBackend):
         self.root.mkdir(parents=True, exist_ok=True)
 
     def _path(self, namespace: str, key: str) -> Path:
-        safe_key = key.replace("/", "_")
+        safe_key = _UNSAFE_FILENAME_CHARS.sub(
+            lambda match: f"%{ord(match.group()):02X}", key
+        )
         directory = self.root / namespace
         directory.mkdir(parents=True, exist_ok=True)
         return directory / f"{safe_key}.json"
@@ -61,11 +66,11 @@ class LocalStorage(StorageBackend):
             try:
                 data = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, json.JSONDecodeError):
-                keys.append(path.stem)
+                keys.append(unquote(path.stem))
                 continue
             if isinstance(data, dict) and _ZSET_MARK in data:
                 continue
-            keys.append(path.stem)
+            keys.append(unquote(path.stem))
         return sorted(keys)
 
     def hgetall(self, namespace: str, key: str) -> dict[str, str] | None:

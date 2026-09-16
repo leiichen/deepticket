@@ -59,29 +59,36 @@ class DeepTicketService:
         llm_label: str,
     ) -> None:
         """组装所有子系统组件（依赖注入的根节点）。"""
+        # config 是启动时已解析的 Pydantic AppConfig，保存它是为了让运行时可读取全局配置。
         self.config = config
-        self.llm_label = llm_label
+        self.llm_label = llm_label  # LLM 显示名（Web UI 用）
+        # ── 存储层 ──
         # 存储层：根据配置选择 Redis 或本地 JSON 文件
         self.storage: StorageBackend = create_storage(config.storage)
-        self.users = UserStore(self.storage)
-        self.chat_history = ChatHistoryStore(self.storage)
+        self.users = UserStore(self.storage)  # 用户账号读写
+        self.chat_history = ChatHistoryStore(self.storage)  # 对话历史读写
+        # ── Investigation Run 子系统 ──
         # Investigation Run：调查任务生命周期 + MCP 工具治理 + 审批
-        self.investigation_runs = InvestigationRunStore(self.storage)
-        self.run_events = RunEventStore(self.storage, run_store=self.investigation_runs)
-        self.approval_requests = ApprovalRequestStore(self.storage)
-        self.mcp_tool_registry = McpToolRegistry(self.storage)
-        self.policy_engine = PolicyEngine(config.tool_governance)
-        self.governance_gate = ToolGovernanceGate(
+        self.investigation_runs = InvestigationRunStore(self.storage) # 调查任务状态机
+        self.run_events = RunEventStore(self.storage, run_store=self.investigation_runs)  # Run 事件流
+        self.approval_requests = ApprovalRequestStore(self.storage)  # 审批单存储
+        self.mcp_tool_registry = McpToolRegistry(self.storage)  # MCP 工具注册表
+        self.policy_engine = PolicyEngine(config.tool_governance)  # 工具引擎判断
+        self.governance_gate = ToolGovernanceGate(  # 治理网关
             self.policy_engine,
             self.run_events,
             approval_store=self.approval_requests,
             tool_registry=self.mcp_tool_registry,
         )
         self.governance_context_store = GovernanceContextStore(self.storage)
-        self.token_usage = TokenUsageStore(self.storage)
+        self.token_usage = TokenUsageStore(self.storage)  # Token 用量统计
+        # ── 项目管理 ──
+        # 项目管理：多项目运行时配置、workspace 与 MCP/Skill 的隔离入口。
         self.projects = ProjectRegistry(self.storage, config, resolve_path=self._resolve_path)
-        self.knowledge = KnowledgeManager(config.knowledge)
-        self.skills = SkillManager(
+        # ── 知识层 ──
+        # 知识层：Git 仓库缓存同步到只读 workspace；Skill 发布到 Agent 可见目录。
+        self.knowledge = KnowledgeManager(config.knowledge)  # Git 同步
+        self.skills = SkillManager(  # Skill 发布到 workspace
             skills_dir=self._resolve_path(config.extensions.skills_dir),
             user_skills_dir=(
                 self._resolve_path(config.extensions.user_skills_dir)
@@ -92,6 +99,8 @@ class DeepTicketService:
                 config.extensions.workspace_skills_dir
             ),
         )
+        # ── 引擎层 ──
+        # 引擎层只依赖引擎配置和 LLM 连接参数，不直接读取 yaml。
         self.engine = OpenHandsEngine(
             config.engine,
             llm_model=llm_model,
@@ -99,15 +108,18 @@ class DeepTicketService:
             llm_base_url=llm_base_url,
             workspace_dir=self._resolve_path(config.knowledge.workspace_dir),
         )
+        # 治理组件由服务层注入；引擎收到 MCP 工具事件时回调 gate 评估。
         self.engine.run_events = self.run_events
         self.engine.governance_gate = self.governance_gate
         self.engine.governance_context_store = self.governance_context_store
         self.engine.governance_hook_config = build_hook_config()
+        # ── Ingress + Chat 编排 ──
+        # Ingress 路由、入队执行、Chat/工单编排都反向持有 service，通过它访问公共组件。
         self.routing = RoutingConfig(routes=list(config.ingress.routes))
-        self.ingress = IngressRunner(self)
-        self.chat = ChatOrchestrator(self)
+        self.ingress = IngressRunner(self)  # 外部事件入队与执行
+        self.chat = ChatOrchestrator(self)  # 聊天/工单流编排
         _metrics.queue_backlog_alert = config.ingress.queue_backlog_alert
-        self.chat_runs = ChatRunManager(self)
+        self.chat_runs = ChatRunManager(self)  # 聊天 Run 管理（订阅/取消）
 
     def _resolve_agent_image_urls(self, urls: list[str]) -> list[str]:
         return self.chat.resolve_agent_image_urls(urls)

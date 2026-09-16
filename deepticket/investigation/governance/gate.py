@@ -47,6 +47,7 @@ class ToolGovernanceGate:
         self._registry = tool_registry
 
     def evaluate_context(self, ctx: ToolInvocationContext) -> ToolGovernanceResult:
+        # 工具是否在项目注册表中可识别，会参与策略评估。
         tool_known = self._is_known_tool(ctx.project_id, ctx.mcp_server, ctx.tool_name)
         ctx = ctx.with_updates(tool_known=tool_known)
 
@@ -78,8 +79,10 @@ class ToolGovernanceGate:
                 )
             return ToolGovernanceResult(evaluation=evaluation, blocked=False)
 
+        # 策略引擎评估（基于 tool_governance.yaml 配置）。
         evaluation = self._policy.evaluate(ctx)
 
+        # 记录审计事件。
         if ctx.run_id and self._events is not None:
             self._events.append(
                 ctx.project_id,
@@ -95,10 +98,12 @@ class ToolGovernanceGate:
                 },
             )
 
+        # 根据决策返回结果。
         if evaluation.decision is PolicyDecision.ALLOW:
             return ToolGovernanceResult(evaluation=evaluation, blocked=False)
 
         if evaluation.decision is PolicyDecision.DENY:
+            # 硬拦截：记录 policy_denied 事件。
             message = (
                 f"Tool {ctx.tool_name} denied by policy ({evaluation.matched_rule})"
             )
@@ -113,6 +118,7 @@ class ToolGovernanceGate:
                 block_message=message,
             )
 
+        # REQUIRE_APPROVAL：创建审批单，Run 状态变为 waiting_approval。
         message = (
             f"Tool {ctx.tool_name} requires approval ({evaluation.matched_rule}); "
             "waiting for operator decision"

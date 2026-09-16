@@ -34,8 +34,8 @@ class KnowledgeManager:
 
     def __init__(self, config: KnowledgeConfig) -> None:
         self.config = config
-        self.cache_dir = Path(config.git_cache_dir)
-        self.workspace_dir = Path(config.workspace_dir)
+        self.cache_dir = Path(config.git_cache_dir)  # workspace/knowledge/
+        self.workspace_dir = Path(config.workspace_dir)  # workspace/project/
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.workspace_dir.mkdir(parents=True, exist_ok=True)
 
@@ -49,16 +49,20 @@ class KnowledgeManager:
         return results
 
     def sync_repo(self, repo: GitRepoConfig) -> GitSyncResult:
+        # 构建带 token 的 Git URL（GitHub/GitLab 自动适配认证格式）。
+        # 生成注入 token 的 clone URL，并分别确定 cache 与 workspace 路径。
         clone_url = build_authenticated_git_url(repo)
         cache_path = self.cache_dir / repo.id
         subdir = repo.workspace_subdir or repo.id
         workspace_path = self.workspace_dir / subdir
 
+        # cache 是稳定的源仓库；已有仓库 fetch/reset 更新，缺失时浅克隆。
         if cache_path.exists():
             action = self._update_repo(cache_path, repo.branch)
         else:
             action = self._clone_repo(clone_url, cache_path, repo.branch)
 
+        # 将 cache 链接/复制到 workspace/project/{workspace_subdir}/ 供 Agent 检索。
         self._publish_readonly_copy(cache_path, workspace_path)
         return GitSyncResult(
             repo_id=repo.id,
@@ -113,6 +117,8 @@ class KnowledgeManager:
         return "updated"
 
     def _publish_readonly_copy(self, source: Path, target: Path) -> None:
+        # symlink 直接共享 cache；copy fallback 会移除写位，防止 Agent 修改。
+        # 同步前重建 workspace 目标，保证其始终指向最新 cache。
         if target.is_symlink() or target.exists():
             if target.is_symlink():
                 target.unlink()
@@ -128,6 +134,7 @@ class KnowledgeManager:
             self._make_tree_readonly(target)
 
     def _make_tree_readonly(self, root: Path) -> None:
+        # 无法创建 symlink 的文件系统回退为 copytree，因此这里需要移除所有写位。
         for dirpath, _, filenames in os.walk(root):
             current = Path(dirpath)
             current.chmod(current.stat().st_mode & ~stat.S_IWUSR & ~stat.S_IWGRP & ~stat.S_IWOTH)

@@ -62,11 +62,13 @@ class OpenHandsEngine:
         self.llm_api_key = llm_api_key
         self.llm_base_url = llm_base_url
         self.workspace_dir = str(Path(workspace_dir).resolve())
+        # 单次 Agent 等待上限；取消信号按 conversation_id 隔离。
         self._agent_timeout_seconds = config.agent_timeout_seconds
-        self._cancel_events: dict[str, asyncio.Event] = {}
+        self._cancel_events: dict[str, asyncio.Event] = {}  # conversation_id → Event
         self.server = (
             f"http://{config.agent_server_host}:{config.agent_server_port}"
         )
+        # Agent Server 内部 LLM profile 名称。
         self.gateway_model = f"openhands_{config.llm_profile}"
         self._settings_cache_key: tuple[str, str, str, str, str] | None = None
         self._settings_cache_value: dict[str, Any] | None = None
@@ -93,21 +95,25 @@ class OpenHandsEngine:
             self.llm_base_url,
         )
 
+    # ── HTTP 客户端 ──
     def _client(self, timeout: float | None = 60.0) -> httpx.AsyncClient:
         return httpx.AsyncClient(timeout=timeout, trust_env=False)
 
     def _headers(self, *, stream: bool = False) -> dict[str, str]:
         headers = {"Content-Type": "application/json"}
+        # DeepTicket 与 Agent Server 之间的会话鉴权。
         if self.config.session_api_key:
-            headers["X-Session-API-Key"] = self.config.session_api_key
+            headers["X-Session-API-Key"] = self.config.session_api_key  # Agent Server 鉴权
         if stream:
             headers["Accept"] = "text/event-stream"
         return headers
 
     def _ws_url(self, conversation_id: str) -> str:
+        # WebSocket URL 用于接收 Agent 实时事件流。
         host = self.config.agent_server_host
         port = self.config.agent_server_port
         url = f"ws://{host}:{port}/sockets/events/{conversation_id}"
+        # WebSocket 鉴权使用 query 参数，HTTP 请求使用 X-Session-API-Key 头。
         if self.config.session_api_key:
             from urllib.parse import urlencode
 
@@ -154,6 +160,7 @@ class OpenHandsEngine:
             f"Agent Server 未就绪 ({self.server}): {last_error}"
         ) from last_error
 
+    # ── LLM Profile 注册 ──
     async def register_llm_profile(self) -> None:
         if not self.llm_api_key.strip():
             logger.warning("跳过 LLM profile 注册：api_key 未配置")
@@ -163,8 +170,10 @@ class OpenHandsEngine:
     def build_headers(self, *, stream: bool = False) -> dict[str, str]:
         return self._headers(stream=stream)
 
+    # ── MCP 配置同步 ──
     async def sync_mcp_config(self, servers: dict[str, dict]) -> None:
         """同步 MCP 到 Agent Server；传空 dict 会清空旧配置。"""
+        # Agent Server 的 settings 是运行时状态，配置变更后必须失效本地缓存。
         self._invalidate_settings_cache()
         body = {"agent_settings_diff": {"mcp_config": servers}}
         async with self._client() as client:
@@ -189,6 +198,7 @@ class OpenHandsEngine:
             },
             "include_secrets": True,
         }
+        # 将当前模型连接注册到 Agent Server 的命名 LLM profile。
         async with self._client() as client:
             resp = await client.post(
                 f"{self.server}/api/profiles/{self.config.llm_profile}",
@@ -467,6 +477,7 @@ class OpenHandsEngine:
         conversation_id: str,
         agent_input: AgentInput,
     ) -> None:
+        # 发送用户消息（当前 Agent Server 通过 conversation events 接口触发 run）。
         body = {
             "role": "user",
             "content": self._message_content(agent_input),
@@ -490,6 +501,7 @@ class OpenHandsEngine:
         *,
         workspace_dir: str | None = None,
     ) -> tuple[str, str | None]:
+        # 创建或复用 OpenHands Conversation。
         history = list(agent_input.history_messages or [])
         stored_id = agent_input.conversation_id
 
@@ -699,6 +711,7 @@ class OpenHandsEngine:
                             except RuntimeError as exc:
                                 logger.warning("策略拒绝通知 Agent 失败: %s", exc)
 
+        # 治理通过后的 OH 事件映射为 RunEvent；被拦截的工具不重复审计为业务事件。
         if (
             run_id
             and project_id
@@ -719,6 +732,7 @@ class OpenHandsEngine:
         if kind == "ActionEvent" and event.get("source") == "agent":
             reply_state.reset_turn()
 
+        # 映射为 StreamChunk（delta / activity / confidence / policy_denied）。
         label = format_agent_activity(event)
         if label:
             await out_queue.put(
@@ -1044,6 +1058,7 @@ class OpenHandsEngine:
                         client=client,
                     )
                 )
+                # 连接 WebSocket 监听事件流；收到 finished/error/stuck 终态则退出。
                 await self._wait_for_agent_done(
                     client,
                     conversation_id,

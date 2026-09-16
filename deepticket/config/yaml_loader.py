@@ -72,8 +72,10 @@ def _sync_process_env(config: AppConfig) -> None:
 
 
 def load_yaml_config(path: Path) -> AppConfig:
+    # 将yaml文件转为字典
     raw = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
     resolved = _resolve_env_in_obj(raw)
+    # 把字典转为对象
     config = AppConfig.model_validate(resolved)
     return _resolve_repo_keys(config)
 
@@ -89,11 +91,13 @@ def load_app_config(
     *,
     dotenv_root: Path | None = None,
 ) -> AppConfig:
+    # 配置优先级：显式 path / DEEPTICKET_CONFIG 指向的 yaml，其次纯环境变量模型。
     config_path = resolve_config_path(path)
     if config_path.is_file():
         config = load_yaml_config(config_path)
     else:
         config = load_app_config_from_env()
 
+    # 让依赖环境变量的 shell 脚本与运行中代码拿到同一份有效配置。
     _sync_process_env(config)
     return config

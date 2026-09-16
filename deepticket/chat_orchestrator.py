@@ -85,30 +85,38 @@ class ChatOrchestrator:
         uid: str | None = None,
         chat_id: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
+        # LLM 未配置时禁止进入 Agent。
         self._service.require_llm_configured()
         if not uid or not chat_id:
-            agent_input = InputAdapter.from_chat(payload)
+            # 新会话没有持久化线程，直接转换为 AgentInput 并消费引擎流。
+            agent_input = InputAdapter.from_chat(payload)  # ChatInput → AgentInput
             agent_input.image_urls = self.resolve_agent_image_urls(
                 agent_input.image_urls
             )
-            self.apply_project_runtime(agent_input, project)
-            async for chunk in self._run_stream(agent_input):
+            self.apply_project_runtime(agent_input, project)  # 注入 workspace/MCP/Skill
+            async for chunk in self._run_stream(agent_input):  # 调引擎流式输出
                 yield chunk
             return
 
+        # 已有会话：走完整流程。
         agent_input = InputAdapter.from_chat(payload)
+        # 发给 Agent 的图片需内嵌为可访问 URL，历史中仍保留原始存储地址。
+        # 保存原始图片 URL 列表，发送给 Agent 前内嵌本地上传图片。
         stored_image_urls = list(agent_input.image_urls)
         agent_input.image_urls = self.resolve_agent_image_urls(stored_image_urls)
-        self.apply_project_runtime(agent_input, project)
+        self.apply_project_runtime(agent_input, project)  # 注入项目运行时配置
 
+        # 从存储中读取会话摘要（含 agent_conversation_id）。
         thread = self._service.chat_history.get_thread_summary(
             project.project_id, uid, chat_id
         )
         if thread is None:
             raise RuntimeError(f"聊天不存在: {chat_id}")
+        # 复用 OpenHands Conversation ID，避免每次请求重建多轮对话。
         if thread.get("agent_conversation_id") and not agent_input.conversation_id:
             agent_input.conversation_id = thread["agent_conversation_id"]
 
+        # 先写入本轮用户消息，再启动 Agent 执行。
         self._service.chat_history.append_message(
             project.project_id,
             uid,
@@ -118,6 +126,7 @@ class ChatOrchestrator:
             image_urls=stored_image_urls or None,
         )
 
+        # 读取包含本轮 user 消息的完整线程；回放历史中剔除当前消息。
         full_thread = self._service.chat_history.get_thread(
             project.project_id, uid, chat_id
         )
@@ -126,6 +135,7 @@ class ChatOrchestrator:
             current_user_message=payload.message.strip(),
         )
 
+        # 已有会话通过 ChatRunManager 管理 Run 生命周期和订阅者。
         run = await self._service.chat_runs.start(
             project=project,
             uid=uid,
@@ -134,10 +144,11 @@ class ChatOrchestrator:
             agent_input=agent_input,
         )
         try:
+            # 订阅 Run 的流式输出，逐 chunk 转发给调用方。
             async for chunk in self._service.chat_runs.subscribe(run):
                 yield chunk
         except asyncio.CancelledError:
-            return
+            return  # 客户端断开则静默退出
 
     async def run_ticket_stream(
         self,
@@ -148,9 +159,9 @@ class ChatOrchestrator:
         ingress_job_id: str | None = None,
     ) -> AsyncIterator[StreamChunk]:
         self._service.require_llm_configured()
-        agent_input = InputAdapter.from_ticket(payload)
+        agent_input = InputAdapter.from_ticket(payload)  # TicketInput → AgentInput
         self.apply_project_runtime(agent_input, project)
-        run_uid = uid or resolve_system_uid(self._service)
+        run_uid = uid or resolve_system_uid(self._service)  # Ingress 无用户时用系统 UID
         source = RunSource.INGRESS if ingress_job_id else RunSource.TICKET
         # Ticket/Ingress 无 ChatRunManager：在此直接 begin run，同步消费 engine 流
         investigation_run = begin_investigation_run(
@@ -174,24 +185,27 @@ class ChatOrchestrator:
                 "run_id": investigation_run.run_id,
             },
         )
-        assistant_parts: list[str] = []
-        activity_log: list[dict[str, str]] = []
-        terminal_status = RunStatus.COMPLETED
+        # 将工单元数据写入存储（ticket_id → run_id 映射）。
+        # 工单链路边流式转发边聚合结果，用于置信度计算和最终状态。
+        assistant_parts: list[str] = []  # 收集流式回复文本片段
+        activity_log: list[dict[str, str]] = []  # 收集 Agent 活动日志
+        terminal_status = RunStatus.COMPLETED  # 默认终态
         terminal_error: str | None = None
         try:
             async for chunk in self._run_stream(agent_input):
-                if chunk.activity:
+                if chunk.activity:  # Agent 活动日志（工具调用等）
                     activity_log.append(
                         {
                             "text": chunk.activity,
                             "kind": chunk.activity_kind or "default",
                         }
                     )
-                if chunk.delta:
+                if chunk.delta:  # 流式回复文本
                     assistant_parts.append(chunk.delta)
-                if chunk.policy_denied:
+                if chunk.policy_denied:  # 策略拒绝
                     terminal_error = chunk.policy_message or terminal_error
-                yield chunk
+                yield chunk  # 转发给调用方
+            # 流结束后计算置信度并作为最后一个 chunk yield。
             yield StreamChunk(
                 confidence=compute_confidence(
                     activities=activity_log,
@@ -200,7 +214,7 @@ class ChatOrchestrator:
                 )
             )
         except PolicyApprovalRequiredError as exc:
-            terminal_status = RunStatus.WAITING_APPROVAL
+            terminal_status = RunStatus.WAITING_APPROVAL  # 需要人工审批
             terminal_error = str(exc)
             yield StreamChunk(activity=str(exc), activity_kind="error")
         except Exception as exc:
@@ -208,6 +222,7 @@ class ChatOrchestrator:
             terminal_error = str(exc)
             raise
         finally:
+            # 无论成功失败，都将 InvestigationRun 推到终态。
             try:
                 self._service.investigation_runs.transition(
                     project.project_id,

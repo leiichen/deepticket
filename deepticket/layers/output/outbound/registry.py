@@ -37,6 +37,7 @@ class WebhookOutbound:
         payload: OutboundPayload,
         config: OutboundConfig,
     ) -> OutboundResult:
+        # 回调 URL 支持 yaml 中的 url，或通过 url_env 指向环境变量。
         url = resolve_outbound_url(config.url, config.url_env)
         if not url:
             env_hint = config.url_env or "(未配置 url / url_env)"
@@ -54,6 +55,8 @@ class WebhookOutbound:
         )
 
         headers = {"Content-Type": "application/json"}
+        # 构建请求头（可从环境变量注入额外 JSON 头）。
+        # extra_headers_env 允许从环境变量注入 JSON 形式的附加请求头。
         extra_env = config.extra_headers_env.strip()
         if extra_env:
             raw = os.environ.get(extra_env, "").strip()
@@ -71,12 +74,14 @@ class WebhookOutbound:
             "source": payload.source,
             "project_id": payload.project_id,
             "external_id": payload.external_id,
-            "status": payload.status,
-            "reply": payload.reply,
+            "status": payload.status,  # finished 或 failed
+            "reply": payload.reply,  # Agent 分析结果全文
             "extensions": payload.extensions,
             "error": payload.error,
         }
 
+        # POST 回调外部系统。
+        # HTTP 层错误与 4xx/5xx 响应都折叠为失败的 OutboundResult。
         try:
             async with httpx.AsyncClient(
                 timeout=config.timeout_seconds,
@@ -87,6 +92,7 @@ class WebhookOutbound:
             logger.error("Webhook 投递失败: %s", exc)
             return OutboundResult(method="webhook", ok=False, detail=str(exc))
 
+        # 处理响应。
         if resp.status_code >= 400:
             logger.warning(
                 "Webhook 响应失败: url=%s status=%s external_id=%s",
